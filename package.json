@@ -1,0 +1,25 @@
+{
+  "name": "bind",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bind — the orchestrator for the agent economy. Plan, pay, verify, deliver.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

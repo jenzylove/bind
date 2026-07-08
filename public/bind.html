@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bind — your entry to the agent economy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .container { max-width: 720px; width: 100%; padding: 40px 20px; }
+
+  header { text-align: center; margin-bottom: 48px; }
+  .logo { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; color: #666; margin-bottom: 8px; }
+  h1 { font-size: 36px; font-weight: 700; color: #fff; margin-bottom: 12px; }
+  .subtitle { color: #888; font-size: 16px; line-height: 1.5; }
+
+  .input-area {
+    background: #12121a;
+    border: 1px solid #222;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .input-area label { display: block; font-size: 14px; color: #888; margin-bottom: 8px; }
+  .input-area textarea {
+    width: 100%;
+    min-height: 80px;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 16px;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    line-height: 1.5;
+  }
+  .input-area textarea::placeholder { color: #444; }
+  .input-hint { font-size: 12px; color: #555; margin-top: 8px; }
+  .input-hint span { color: #666; cursor: pointer; }
+  .input-hint span:hover { color: #888; }
+
+  .actions { display: flex; gap: 12px; margin-bottom: 24px; }
+  .btn {
+    flex: 1;
+    padding: 14px 24px;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-primary { background: #4f46e5; color: #fff; }
+  .btn-primary:hover { background: #4338ca; }
+  .btn-primary:disabled { background: #333; color: #666; cursor: not-allowed; }
+  .btn-secondary { background: #1a1a24; color: #e0e0e0; border: 1px solid #222; }
+  .btn-secondary:hover { background: #222; }
+
+  /* Plan display */
+  .plan { display: none; }
+  .plan.visible { display: block; }
+
+  .price-tag {
+    background: #1a1a24;
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .price-label { font-size: 14px; color: #888; }
+  .price-value { font-size: 28px; font-weight: 700; color: #4ade80; }
+  .price-value span { font-size: 14px; color: #888; }
+
+  .pipeline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .pipeline-step {
+    background: #12121a;
+    border: 1px solid #222;
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.3s;
+  }
+  .pipeline-step .step-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #1a1a24;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600; color: #666;
+    flex-shrink: 0;
+  }
+  .pipeline-step .step-agent {
+    flex: 1;
+  }
+  .pipeline-step .step-agent .name { font-weight: 600; color: #fff; font-size: 14px; }
+  .pipeline-step .step-agent .desc { font-size: 12px; color: #666; }
+  .pipeline-step .step-price { font-size: 13px; color: #4ade80; font-weight: 600; flex-shrink: 0; }
+  .pipeline-step.passed { border-color: #4ade8044; }
+  .pipeline-step.failed { border-color: #ef444444; }
+  .pipeline-step.running { border-color: #4f46e544; }
+  .pipeline-step .step-num.passed { background: #4ade8022; color: #4ade80; }
+  .pipeline-step .step-num.failed { background: #ef444422; color: #ef4444; }
+  .pipeline-step .step-num.running { background: #4f46e522; color: #4f46e5; }
+
+  .connector { text-align: center; color: #333; font-size: 16px; }
+
+  .exec-btn { width: 100%; }
+
+  /* Execution */
+  .result { display: none; }
+  .result.visible { display: block; }
+
+  .result-card {
+    background: #12121a;
+    border: 1px solid #222;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 16px;
+  }
+  .result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .result-status {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+  .result-status.completed { background: #4ade8022; color: #4ade80; }
+  .result-status.failed { background: #ef444422; color: #ef4444; }
+  .result-status.running { background: #4f46e522; color: #4f46e5; }
+
+  .result-step {
+    border-top: 1px solid #222;
+    padding: 12px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .result-step:last-child { border-bottom: 1px solid #222; }
+  .result-step .passed { color: #4ade80; }
+  .result-step .failed { color: #ef4444; }
+  .result-step .status-icon { font-size: 18px; }
+
+  .result-output {
+    background: #0a0a0f;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 16px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+    color: #888;
+  }
+
+  .receipt {
+    background: #0a0a0f;
+    border: 1px solid #222;
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 16px;
+    font-size: 13px;
+  }
+  .receipt .line { display: flex; justify-content: space-between; padding: 4px 0; }
+  .receipt .label { color: #666; }
+  .receipt .value { color: #ccc; }
+
+  .attribution { text-align: center; margin-top: 48px; font-size: 12px; color: #444; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .pulse { animation: pulse 1.5s ease-in-out infinite; }
+
+  .error-msg {
+    background: #2a1515;
+    border: 1px solid #5a2020;
+    border-radius: 8px;
+    padding: 12px;
+    color: #ef4444;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+  .error-msg.visible { display: block; }
+
+  @media (max-width: 600px) {
+    .container { padding: 20px 16px; }
+    h1 { font-size: 28px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">Bind</div>
+    <h1>Your entry to the agent economy</h1>
+    <p class="subtitle">Tell us what you need. We'll find the right agents, pay them,<br>verify their work, and hand you the finished result.</p>
+  </header>
+
+  <!-- Goal input -->
+  <div class="input-area">
+    <label for="goal">What do you want to get done?</label>
+    <textarea id="goal" placeholder="e.g. Is token 0x1234... safe to buy? or Give me a market brief on BTC">Is token 0x1234 safe to buy?</textarea>
+    <div class="input-hint">
+      Try: <span onclick="fillGoal('Is token 0x1234 safe to buy?')">token due diligence</span> ·
+      <span onclick="fillGoal('Give me a market brief')">market brief</span> ·
+      <span onclick="fillGoal('Check if this contract is a honeypot')">honeypot check</span>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" onclick="createPlan()" id="planBtn">Create Plan</button>
+    <button class="btn btn-secondary" onclick="clearAll()">Clear</button>
+  </div>
+
+  <div class="error-msg" id="errorMsg"></div>
+
+  <!-- Plan display -->
+  <div class="plan" id="planSection">
+    <div class="price-tag">
+      <div>
+        <div class="price-label">Estimated total</div>
+        <div class="price-value" id="totalPrice">$0.00 <span>USDT</span></div>
+      </div>
+      <div style="text-align:right">
+        <div class="price-label">Agents</div>
+        <div class="price-value" id="agentCount" style="font-size:24px;color:#fff">0</div>
+      </div>
+    </div>
+
+    <div class="pipeline" id="pipeline"></div>
+
+    <button class="btn btn-primary exec-btn" onclick="executePlan()" id="execBtn">
+      ❯ Execute Plan
+    </button>
+  </div>
+
+  <!-- Execution results -->
+  <div class="result" id="resultSection">
+    <div class="result-card">
+      <div class="result-header">
+        <div>
+          <div style="font-size:18px;font-weight:600" id="resultTitle">Execution Complete</div>
+          <div style="font-size:13px;color:#666" id="resultSummary">3 steps, 0.11 USDT paid</div>
+        </div>
+        <div class="result-status" id="resultStatus">completed</div>
+      </div>
+
+      <div id="resultSteps"></div>
+
+      <div class="result-output" id="resultOutput">Waiting for execution...</div>
+
+      <div class="receipt" id="receipt">
+        <div style="font-weight:600;margin-bottom:8px;color:#fff;">⊞ Receipt</div>
+        <div class="line"><span class="label">Execution ID</span><span class="value" id="receiptId">-</span></div>
+        <div class="line"><span class="label">Total paid</span><span class="value" id="receiptTotal">0 USDT</span></div>
+        <div class="line"><span class="label">On-chain anchor</span><span class="value" id="receiptAnchor">pending</span></div>
+      </div>
+    </div>
+
+    <button class="btn btn-secondary" onclick="resetAll()" style="margin-top:16px">← Start Over</button>
+  </div>
+
+  <div class="attribution">Built for the OKX AI Genesis Hackathon</div>
+</div>
+
+<script>
+// State
+let currentPlan = null;
+let currentExecution = null;
+
+function fillGoal(text) {
+  document.getElementById('goal').value = text;
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function hideError() {
+  document.getElementById('errorMsg').classList.remove('visible');
+}
+
+async function createPlan() {
+  hideError();
+  const goal = document.getElementById('goal').value.trim();
+  if (!goal) { showError('Please describe what you want to get done.'); return; }
+
+  const btn = document.getElementById('planBtn');
+  btn.disabled = true;
+  btn.textContent = 'Planning...';
+
+  document.getElementById('planSection').classList.remove('visible');
+  document.getElementById('resultSection').classList.remove('visible');
+
+  try {
+    const res = await fetch('/bind/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goal }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) { showError(data.message || 'Failed to create plan'); btn.disabled = false; btn.textContent = 'Create Plan'; return; }
+
+    currentPlan = data.plan;
+
+    // Render price
+    document.getElementById('totalPrice').innerHTML = `$${data.plan.totalPriceUsdt.toFixed(3)} <span>USDT</span>`;
+    document.getElementById('agentCount').textContent = data.plan.steps.length;
+
+    // Render pipeline
+    const pipeline = document.getElementById('pipeline');
+    pipeline.innerHTML = '';
+    data.plan.steps.forEach((step, i) => {
+      pipeline.innerHTML += `
+        <div class="pipeline-step">
+          <div class="step-num">${step.step}</div>
+          <div class="step-agent">
+            <div class="name">${step.agent.name}</div>
+            <div class="desc">${step.agent.serviceName}</div>
+          </div>
+          <div class="step-price">$${step.agent.feeAmount.toFixed(3)}</div>
+        </div>
+        ${i < data.plan.steps.length - 1 ? '<div class="connector">↓</div>' : ''}
+      `;
+    });
+
+    // Show plan section
+    document.getElementById('planSection').classList.add('visible');
+
+  } catch (e) {
+    showError(`Connection error: ${e.message}`);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Create Plan';
+}
+
+async function executePlan() {
+  if (!currentPlan) return;
+
+  hideError();
+  const btn = document.getElementById('execBtn');
+  btn.disabled = true;
+  btn.textContent = 'Executing...';
+
+  // Show result section with running state
+  document.getElementById('resultSection').classList.add('visible');
+  document.getElementById('resultStatus').textContent = 'running';
+  document.getElementById('resultStatus').className = 'result-status running';
+  document.getElementById('resultTitle').textContent = 'Running your workflow...';
+
+  // Animate pipeline steps
+  const steps = document.querySelectorAll('.pipeline-step');
+
+  try {
+    const res = await fetch('/bind/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planId: currentPlan.planId }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) { showError(data.message || 'Execution failed'); btn.disabled = false; btn.textContent = 'Execute Plan'; return; }
+
+    currentExecution = data;
+
+    // Update result
+    const status = data.status;
+    document.getElementById('resultStatus').textContent = status;
+    document.getElementById('resultStatus').className = `result-status ${status}`;
+    document.getElementById('resultTitle').textContent = status === 'completed'
+      ? '✅ Workflow complete'
+      : status === 'partial'
+        ? '⚠️ Partial completion'
+        : '❌ Execution failed';
+    document.getElementById('resultSummary').textContent =
+      `${data.completedSteps}/${data.totalSteps} steps, ${data.totalPaid.toFixed(3)} USDT paid`;
+
+    // Animate steps based on results
+    data.stepResults.forEach((sr, i) => {
+      if (steps[i]) {
+        steps[i].className += ` ${sr.status}`;
+        const num = steps[i].querySelector('.step-num');
+        num.className += ` ${sr.status}`;
+        if (sr.status === 'passed') num.textContent = '✓';
+        if (sr.status === 'failed') num.textContent = '✗';
+      }
+    });
+
+    // Render step results
+    const resultSteps = document.getElementById('resultSteps');
+    resultSteps.innerHTML = '';
+    data.stepResults.forEach(sr => {
+      const passed = sr.status === 'passed';
+      resultSteps.innerHTML += `
+        <div class="result-step">
+          <div>
+            <div style="font-weight:600;color:#fff">${sr.agentName}</div>
+            <div style="font-size:12px;color:#666">${sr.verificationResult?.detail || sr.status}</div>
+          </div>
+          <div>
+            <span class="${passed ? 'passed' : 'failed'} status-icon">${passed ? '✓' : '✗'}</span>
+          </div>
+        </div>
+      `;
+    });
+
+    // Show output
+    const output = JSON.stringify(data, null, 2);
+    document.getElementById('resultOutput').textContent = output;
+
+    // Receipt
+    document.getElementById('receiptId').textContent = data.executionId;
+    document.getElementById('receiptTotal').textContent = `${data.totalPaid.toFixed(3)} USDT`;
+    document.getElementById('receiptAnchor').textContent = data.anchorTxHash || '—';
+
+  } catch (e) {
+    showError(`Execution error: ${e.message}`);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '✓ Executed';
+}
+
+function resetAll() {
+  currentPlan = null;
+  currentExecution = null;
+  document.getElementById('planSection').classList.remove('visible');
+  document.getElementById('resultSection').classList.remove('visible');
+  document.getElementById('execBtn').disabled = false;
+  document.getElementById('execBtn').textContent = 'Execute Plan';
+}
+
+function clearAll() {
+  resetAll();
+  hideError();
+  document.getElementById('goal').value = '';
+}
+</script>
+</body>
+</html>

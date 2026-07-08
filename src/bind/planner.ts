@@ -1,20 +1,20 @@
-// Bind — planner: goal decomposition → agent selection → plan + price quote
+// Bind planner: goal decomposition into multi-agent plan with flat price
 import { randomUUID } from "node:crypto";
 import type { BindPlan, BindStep, PlanRequest, PlanTemplate } from "./types.js";
-import { getCheapestByCategory } from "./agents.js";
+import { getCheapestByCategory, AGENT_CATALOG } from "./agents.js";
 
 const TEMPLATES: Record<PlanTemplate, { goalPattern: RegExp; description: string }> = {
   due_diligence: {
     goalPattern: /(safe|risk|audit|scan|check|token|contract|honeypot|rug)/i,
-    description: "Token due diligence — security scan + sentiment + market check",
+    description: "Token due diligence, security scan, sentiment, market check",
   },
   market_brief: {
     goalPattern: /(market|brief|overview|trend|analysis|research)/i,
-    description: "Market brief — market data + sentiment + analysis report",
+    description: "Market brief with data, sentiment, and analysis",
   },
   custom: {
     goalPattern: /.*/,
-    description: "Custom goal — will be analyzed",
+    description: "Custom goal analyzed against available agents",
   },
 };
 
@@ -30,6 +30,7 @@ function detectTemplate(goal: string): PlanTemplate {
 
 function buildSteps(template: PlanTemplate, goal: string, params: PlanRequest): BindStep[] {
   switch (template) {
+
     case "due_diligence": {
       const security = getCheapestByCategory("security");
       const sentiment = getCheapestByCategory("sentiment");
@@ -70,7 +71,7 @@ function buildSteps(template: PlanTemplate, goal: string, params: PlanRequest): 
 
     case "market_brief": {
       const market = getCheapestByCategory("market_data");
-      const analysis = AGENT_CATALOG.find(a => a.category === "analysis" && a.name === "穿越牛熊简报");//eslint-disable-line
+      const analysis = AGENT_CATALOG.find(a => a.category === "analysis" && a.name === "穿越牛熊简报");
       const steps: BindStep[] = [];
       if (market) {
         steps.push({
@@ -95,7 +96,6 @@ function buildSteps(template: PlanTemplate, goal: string, params: PlanRequest): 
     }
 
     default: {
-      // For custom goals, just grab a market data agent
       const market = getCheapestByCategory("market_data");
       return market ? [
         {
@@ -109,9 +109,6 @@ function buildSteps(template: PlanTemplate, goal: string, params: PlanRequest): 
     }
   }
 }
-
-// Re-import here to avoid circular deps
-import { AGENT_CATALOG } from "./agents.js";
 
 export function createPlan(req: PlanRequest): BindPlan {
   const template = req.template || detectTemplate(req.goal);

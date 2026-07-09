@@ -30,8 +30,10 @@ function fetchServiceDescription(agentId: string, serviceId: string, serviceName
   } catch { return null; }
 }
 
-function httpCall(method: string, url: string, body: string | null, authHeader?: string): { status: number; body: string; headers: Record<string, string> } {
-  const authFlag = authHeader ? `-H 'PAYMENT-SIGNATURE: ${authHeader}'` : "";
+function httpCall(method: string, url: string, body: string | null, authHeader?: string, headerFormat?: "x402" | "payment"): { status: number; body: string; headers: Record<string, string> } {
+  const headerName = headerFormat === "x402" ? "Authorization" : "PAYMENT-SIGNATURE";
+  const headerValue = headerFormat === "x402" ? `X402 ${authHeader}` : authHeader || "";
+  const authFlag = authHeader ? `-H '${headerName}: ${headerValue}'` : "";
   const bodyFlag = body ? `-d '${body.replace(/'/g, "'\\''")}'` : "";
   const result = execSync(
     `curl -sD - --max-time 15 -X ${method} '${url}' -H 'Content-Type: application/json' ${authFlag} ${bodyFlag}`,
@@ -180,7 +182,11 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
           if (challenge && challenge.accepts) {
             const authHeader = signPayment(challenge);
             if (authHeader) {
-              const paid = httpCall("POST", step.agent.endpoint, body, authHeader);
+              // Try both header formats — OKX uses Authorization: X402, others use PAYMENT-SIGNATURE
+              let paid = httpCall("POST", step.agent.endpoint, body, authHeader, "x402");
+              if (paid.status !== 200) {
+                paid = httpCall("POST", step.agent.endpoint, body, authHeader, "payment");
+              }
               if (paid.status === 200) {
                 result.output = JSON.parse(paid.body || "{}");
                 result.status = "passed";

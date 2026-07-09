@@ -62,7 +62,10 @@ export function requirePayment(tool: ToolName, description: string) {
       return;
     }
 
-    const proof = req.header("X-PAYMENT") ?? req.header("PAYMENT-SIGNATURE");
+    const proof =
+      req.header("Authorization")?.startsWith("X402 ")
+        ? req.header("Authorization")!.slice(5)
+        : req.header("X-PAYMENT") ?? req.header("PAYMENT-SIGNATURE");
     if (!proof) {
       // Unpaid: emit the x402 challenge. v1 form carries it in the body.
       res.status(402).json(buildChallenge(tool, description));

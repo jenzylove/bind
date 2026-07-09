@@ -17,7 +17,7 @@ app.use(express.json({ limit: "5mb" }));
 // CORS — allow frontend on Vercel to call this API
 app.use((_req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Content-Type, X-PAYMENT, PAYMENT-SIGNATURE");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-PAYMENT, PAYMENT-SIGNATURE");
   res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   if (_req.method === "OPTIONS") { res.sendStatus(200); return; }
   next();

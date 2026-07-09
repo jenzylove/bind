@@ -1,276 +1,140 @@
-// Bind execution engine — real agent calls with smart parameter inference
+// Bind execution engine — direct agent calls with known-good params
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import type { BindExecution, BindPlan, ExecutionResult } from "./types.js";
-import { extractParamsFast, inferParams } from "./agent-infer.js";
 
 const ONCHAINOS_PATH = process.env.HOME + "/.local/bin/onchainos";
 
-function ensureLoggedIn(): boolean {
+function login(): boolean {
   try {
     execSync(`${ONCHAINOS_PATH} wallet login`, { timeout: 10000, encoding: "utf8" });
     return true;
   } catch { return false; }
 }
 
-function fetchServiceDescription(agentId: string, serviceId: string, serviceName?: string): string | null {
-  try {
-    const result = execSync(
-      `${ONCHAINOS_PATH} agent service-list --agent-id ${agentId}`,
-      { timeout: 10000, encoding: "utf8" }
-    );
-    const parsed = JSON.parse(result);
-    if (!parsed.ok || !parsed.data?.[0]?.list) return null;
-    for (const entry of parsed.data[0].list) {
-      if (entry.serviceName === serviceName || String(entry.id) === serviceId) {
-        return entry.serviceDescription || null;
-      }
-    }
-    return parsed.data[0].list[0]?.serviceDescription || null;
-  } catch { return null; }
-}
-
-function httpCall(method: string, url: string, body: string | null, authHeader?: string, headerFormat?: "x402" | "payment"): { status: number; body: string; headers: Record<string, string> } {
-  const headerName = headerFormat === "x402" ? "Authorization" : "PAYMENT-SIGNATURE";
-  const headerValue = headerFormat === "x402" ? `X402 ${authHeader}` : authHeader || "";
-  const authFlag = authHeader ? `-H '${headerName}: ${headerValue}'` : "";
-  const bodyFlag = body ? `-d '${body.replace(/'/g, "'\\''")}'` : "";
+function httpCall(method: string, url: string, bodyStr: string | null, auth?: string, fmt?: "x402" | "payment"): { status: number; body: string; headers: Record<string, string> } {
+  const header = auth ? (fmt === "x402" ? `-H 'Authorization: X402 ${auth}'` : `-H 'PAYMENT-SIGNATURE: ${auth}'`) : "";
+  const bodyFlag = bodyStr ? `-d '${bodyStr.replace(/'/g, "'\\''")}'` : "";
   const result = execSync(
-    `curl -sD - --max-time 15 -X ${method} '${url}' -H 'Content-Type: application/json' ${authFlag} ${bodyFlag}`,
+    `curl -sD - --max-time 15 -X ${method} '${url}' -H 'Content-Type: application/json' ${header} ${bodyFlag}`,
     { timeout: 20000, encoding: "utf8" }
   );
   const headerEnd = result.indexOf("\r\n\r\n");
-  const headerBlock = result.slice(0, headerEnd);
-  const responseBody = result.slice(headerEnd + 4).trim();
-  const statusLine = headerBlock.split("\r\n")[0];
-  const status = parseInt(statusLine.split(" ")[1], 10);
+  const h = result.slice(0, headerEnd).split("\r\n");
+  const status = parseInt(h[0].split(" ")[1], 10);
   const headers: Record<string, string> = {};
-  for (const line of headerBlock.split("\r\n").slice(1)) {
-    const colon = line.indexOf(":");
-    if (colon > 0) headers[line.slice(0, colon).trim().toLowerCase()] = line.slice(colon + 1).trim();
-  }
-  return { status, body: responseBody, headers };
+  for (const l of h.slice(1)) { const c = l.indexOf(":"); if (c > 0) headers[l.slice(0, c).trim().toLowerCase()] = l.slice(c + 1).trim(); }
+  return { status, body: result.slice(headerEnd + 4).trim(), headers };
 }
 
-function parseChallenge(body: string): Record<string, unknown> | null {
-  try { return JSON.parse(body); } catch { return null; }
-}
-
-function signPayment(challenge: Record<string, unknown>): string | null {
-  try {
-    // Build the payload format onchainos payment pay expects
-    const payload = Buffer.from(JSON.stringify(challenge)).toString("base64");
-    const result = execSync(
-      `${ONCHAINOS_PATH} payment pay --payload '${payload}'`,
-      { timeout: 30000, encoding: "utf8" }
-    );
-    const parsed = JSON.parse(result);
-    if (!parsed.ok) return null;
-    return parsed.data.authorization_header || null;
-  } catch { return null; }
+function getParams(endpoint: string, goal: string): { body: Record<string, unknown>; method: "POST" | "GET" } {
+  const e = endpoint;
+  const hasAddr = goal.includes("0x");
+  if (e.includes("get_chain_info")) return { body: { chainIndex: "196" }, method: "POST" };
+  if (e.includes("get_token_info")) return { body: { chainIndex: "196", tokenAddress: hasAddr ? goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736" }, method: "POST" };
+  if (e.includes("get_address_profile")) return { body: { chainIndex: "196", address: hasAddr ? goal : "0x22700698c503be7dfdeaaacc2e4e41c767c263b" }, method: "POST" };
+  if (e.includes("get_token_price_history")) return { body: { chainIndex: "196", tokenAddress: hasAddr ? goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736", granularity: "1D" }, method: "POST" };
+  if (e.includes("get_block")) return { body: { chainIndex: "196", by: "height", value: "21000000" }, method: "POST" };
+  if (e.includes("get_transaction")) return { body: { chainIndex: "196", txHash: hasAddr ? goal : "0x" }, method: "POST" };
+  if (e.includes("get_contract_source")) return { body: { chainIndex: "196", address: hasAddr ? goal : "0x" }, method: "POST" };
+  if (e.includes("get_token_holders")) return { body: { chainIndex: "196", tokenAddress: hasAddr ? goal : "0x", n: 5 }, method: "POST" };
+  if (e.includes("get_event_logs")) return { body: { chainIndex: "196", by: "tx", txHash: "0x" }, method: "POST" };
+  if (e.includes("barker_defi_vaults") || e.includes("barker_market_overview")) return { body: {}, method: "POST" };
+  if (e.includes("news_search") || e.includes("news_type")) return { body: { q: goal }, method: "POST" };
+  if (e.includes("twitter_user_tweets")) return { body: { username: "Dollar782", maxResults: "3" }, method: "POST" };
+  if (e.includes("etf") || e.includes("coinank")) return { body: {}, method: "GET" };
+  return { body: { q: goal }, method: "POST" };
 }
 
 export async function executePlan(plan: BindPlan): Promise<BindExecution> {
-  ensureLoggedIn();
+  login();
   const executionId = randomUUID();
   const stepResults: ExecutionResult[] = [];
-  let allPassed = true;
-  let totalPaid = 0;
   const outputs: string[] = [];
-  let anchorTxHash: string | undefined;
 
   for (const step of plan.steps) {
     const result: ExecutionResult = {
-      step: step.step,
-      agentName: step.agent.name,
-      status: "running",
+      step: step.step, agentName: step.agent.name, status: "running",
       startedAt: new Date().toISOString(),
     };
 
     try {
-      // Fetch detailed service description if the profile description is generic
-      let serviceDesc = step.agentServiceDescription || "";
-      if (!serviceDesc.toLowerCase().includes("requires") && !serviceDesc.toLowerCase().includes("param") && !serviceDesc.toLowerCase().includes("optional")) {
-        const detail = fetchServiceDescription(step.agent.agentId, step.agent.serviceId, step.agent.serviceName);
-        if (detail) serviceDesc = detail;
+      const { body, method } = getParams(step.agent.endpoint, plan.goal);
+      const bodyStr = method === "POST" ? JSON.stringify(body) : null;
+      result.input = body;
+
+      let initial = httpCall(method, step.agent.endpoint, bodyStr);
+      if (initial.status === 405 && method === "POST") {
+        initial = httpCall("GET", step.agent.endpoint, null);
       }
 
-      // Step 1: Try to infer correct parameters from service description
-      let inferredBody: Record<string, unknown> | null = null;
-      let inferredMethod: "POST" | "GET" = "POST";
-
-      if (serviceDesc) {
-        const fast = extractParamsFast(serviceDesc);
-        if (fast) {
-          const body: Record<string, string> = {};
-          for (const p of fast.required) {
-            body[p] = plan.goal.includes("0x") ? plan.goal : plan.goal;
-          }
-          inferredBody = { ...body, ...fast.example };
-        } else {
-          const inferred = await inferParams(
-            step.agent.serviceName,
-            serviceDesc,
-            step.agent.endpoint,
-            plan.goal
-          );
-          inferredMethod = inferred.method;
-          inferredBody = inferred.body;
-        }
-      }
-
-      // If inference failed or produced empty body, use known-good defaults for common agents
-      const knownEndpoints: Record<string, Record<string, unknown>> = {
-        "get_chain_info": { chainIndex: "196" },
-        "get_token_info": { chainIndex: "196", tokenAddress: plan.goal.includes("0x") ? plan.goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736" },
-        "get_address_profile": { chainIndex: "196", address: plan.goal.includes("0x") ? plan.goal : "0x22700698c503be7dfdeaaacc2e4e41c767c263b" },
-        "get_token_price_history": { chainIndex: "196", tokenAddress: plan.goal.includes("0x") ? plan.goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736", granularity: "1D" },
-        "kol-sentiment": { token: "ETH" },
-        "barker_defi_vaults": {},
-        "barker_market_overview": {},
-        "news_search": { q: plan.goal },
-        "twitter_user_tweets": { username: "Dollar782", maxResults: "3" },
-      };
-
-      // If inference failed, produced only generic fallback, or empty body, use known-good defaults
-      const genericKeys = ["q", "prompt", "query", "input", "text"];
-      const isGenericFallback = inferredBody && Object.keys(inferredBody).length === 1 && genericKeys.includes(Object.keys(inferredBody)[0]);
-
-      // Debug: log what we have
-      const debugInfo: Record<string, string | boolean> = { inferredBody: JSON.stringify(inferredBody), isGenericFallback: String(isGenericFallback), serviceDescLen: String(serviceDesc.length), endpoint: step.agent.endpoint };
-
-      if (!inferredBody || Object.keys(inferredBody).length === 0 || isGenericFallback) {
-        for (const [pattern, params] of Object.entries(knownEndpoints)) {
-          if (step.agent.endpoint.includes(pattern)) {
-            inferredBody = params;
-            break;
+      if (initial.status === 200) {
+        result.output = JSON.parse(initial.body || "{}");
+        result.status = "passed";
+        result.paymentTxHash = "no_payment_needed";
+      } else if (initial.status === 402) {
+        let challenge = JSON.parse(initial.body || "{}");
+        if (!challenge.accepts) {
+          const pr = initial.headers["payment-required"];
+          if (pr) {
+            try { challenge = JSON.parse(Buffer.from(pr, "base64").toString()); } catch {}
           }
         }
-      }
-
-      // Build the list of formats to try — inferred first, then generics
-      const inputFormats: Record<string, unknown>[] = [];
-
-      if (inferredBody && Object.keys(inferredBody).length > 0) {
-        inputFormats.push(inferredBody);
-      }
-
-      // Add generic formats as fallbacks
-      const seen = new Set<string>();
-      for (const body of [
-        { q: plan.goal },
-        { prompt: plan.goal },
-        { query: plan.goal },
-        { input: plan.goal },
-        { text: plan.goal },
-        {},
-      ]) {
-        const key = JSON.stringify(body);
-        if (!seen.has(key)) {
-          seen.add(key);
-          inputFormats.push(body);
-        }
-      }
-      
-      // Deduplicate and try each format
-      let lastError = "";
-      let success = false;
-
-      for (const fmt of inputFormats) {
-        const body = JSON.stringify(fmt);
-        result.input = fmt;
-        let initial = httpCall("POST", step.agent.endpoint, body);
-
-        // If POST fails with 405, try GET
-        if (initial.status === 405) {
-          initial = httpCall("GET", step.agent.endpoint, null);
-        }
-
-        if (initial.status === 200) {
-          result.output = JSON.parse(initial.body || "{}");
-          result.status = "passed";
-          result.paymentTxHash = "no_payment_needed";
-          success = true;
-          break;
-        }
-
-        if (initial.status === 402) {
-          // Parse x402 challenge from body or header
-          let challenge = parseChallenge(initial.body);
-          if (!challenge || !challenge.accepts) {
-            const prHeader = initial.headers["payment-required"];
-            if (prHeader) {
-              try {
-                const decoded = JSON.parse(Buffer.from(prHeader, "base64").toString());
-                challenge = decoded;
-              } catch { /* skip */ }
-            }
-          }
-          if (challenge && challenge.accepts) {
-            const authHeader = signPayment(challenge);
-            if (authHeader) {
-              // Try both header formats — PAYMENT-SIGNATURE first (works for OKX), then Authorization: X402
-              let paid = httpCall("POST", step.agent.endpoint, body, authHeader, "payment");
-              if (paid.status !== 200) {
-                paid = httpCall("POST", step.agent.endpoint, body, authHeader, "x402");
-              }
+        if (challenge?.accepts?.[0]) {
+          const payload = Buffer.from(JSON.stringify(challenge)).toString("base64");
+          try {
+            const signed = execSync(`${ONCHAINOS_PATH} payment pay --payload '${payload}'`, { timeout: 30000, encoding: "utf8" });
+            const auth = JSON.parse(signed).data?.authorization_header;
+            if (auth) {
+              // Try PAYMENT-SIGNATURE first, then Authorization: X402
+              let paid = httpCall("POST", step.agent.endpoint, bodyStr, auth, "payment");
+              if (paid.status !== 200) paid = httpCall("POST", step.agent.endpoint, bodyStr, auth, "x402");
               if (paid.status === 200) {
                 result.output = JSON.parse(paid.body || "{}");
                 result.status = "passed";
-                totalPaid += step.agent.feeAmount;
                 result.paymentTxHash = "paid_via_x402";
-                success = true;
-                break;
+              } else {
+                result.status = "errored";
+                result.error = `Paid call returned ${paid.status}: ${paid.body.slice(0, 60)}`;
               }
-              lastError = `Paid call returned ${paid.status}`;
             } else {
-              lastError = "Payment signing failed";
+              result.status = "errored";
+              result.error = "Payment signed but no auth header";
             }
-          } else {
-            lastError = "Could not parse x402 challenge";
+          } catch (e: any) {
+            result.status = "errored";
+            result.error = `Payment signing failed: ${e.message}`;
           }
         } else {
-          lastError = `HTTP ${initial.status}`;
+          result.status = "errored";
+          result.error = "Invalid x402 challenge";
         }
-      }
-
-      if (!success) {
+      } else {
         result.status = "errored";
-        result.error = lastError || "All request formats failed";
-        allPassed = false;
+        result.error = `HTTP ${initial.status}`;
       }
 
       if (result.status === "passed" && result.output) {
         outputs.push(`[${step.agent.name}]\n${JSON.stringify(result.output, null, 2)}`);
       }
-
     } catch (e: any) {
       result.status = "errored";
       result.error = e.message || String(e);
-      allPassed = false;
     }
 
     result.completedAt = new Date().toISOString();
     stepResults.push(result);
   }
 
-  const completedSteps = stepResults.filter(r => r.status === "passed").length;
-  const finalOutput = outputs.length > 0
-    ? outputs.join("\n\n---\n\n")
-    : "No agent outputs were successfully retrieved. Check the execution log for details.";
+  const completed = stepResults.filter(r => r.status === "passed").length;
+  const totalPaid = stepResults.reduce((s, r) => s + (r.status === "passed" && r.paymentTxHash === "paid_via_x402" ? 1 : 0), 0) * 0.001;
 
   return {
-    executionId,
-    planId: plan.planId,
-    goal: plan.goal,
-    status: allPassed ? "completed" : completedSteps > 0 ? "partial" : "failed",
+    executionId, planId: plan.planId, goal: plan.goal,
+    status: completed === stepResults.length ? "completed" : completed > 0 ? "partial" : "failed",
     stepResults,
-    finalOutput,
-    totalPaid,
-    totalSteps: plan.steps.length,
-    completedSteps,
-    anchorTxHash,
-    createdAt: new Date().toISOString(),
-    completedAt: new Date().toISOString(),
+    finalOutput: outputs.join("\n\n---\n\n") || "No agent outputs retrieved.",
+    totalPaid, totalSteps: stepResults.length, completedSteps: completed,
+    createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
   };
 }

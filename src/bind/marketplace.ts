@@ -31,6 +31,7 @@ export interface MarketplaceService {
   serviceType: string;
   feeAmount: number;
   endpoint: string;
+  description?: string;
 }
 
 function ensureLoggedIn(): boolean {

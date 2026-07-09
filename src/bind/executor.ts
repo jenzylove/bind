@@ -1,7 +1,8 @@
-// Bind execution engine — real agent calls with x402 payment, real results
+// Bind execution engine — real agent calls with smart parameter inference
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import type { BindExecution, BindPlan, ExecutionResult } from "./types.js";
+import { extractParamsFast, inferParams } from "./agent-infer.js";
 
 const ONCHAINOS_PATH = process.env.HOME + "/.local/bin/onchainos";
 
@@ -68,14 +69,55 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     };
 
     try {
-      // Try multiple input formats since agents use different parameter names
-      const inputFormats = [
-        { ...step.inputTemplate, q: plan.goal },
-        { ...step.inputTemplate, prompt: plan.goal },
-        { ...step.inputTemplate, query: plan.goal },
-        { ...step.inputTemplate, input: plan.goal },
-        { ...step.inputTemplate, text: plan.goal },
-      ];
+      // Step 1: Try to infer correct parameters from service description
+      let inferredBody: Record<string, unknown> | null = null;
+      let inferredMethod: "POST" | "GET" = "POST";
+
+      if (step.agentServiceDescription) {
+        const fast = extractParamsFast(step.agentServiceDescription);
+        if (fast) {
+          // Build body from extracted params — fill with goal where appropriate
+          const body: Record<string, string> = {};
+          for (const p of fast.required) {
+            body[p] = plan.goal.includes("0x") ? plan.goal : plan.goal;
+          }
+          inferredBody = { ...body, ...fast.example };
+        } else {
+          // Fall back to LLM inference
+          const inferred = await inferParams(
+            step.agent.serviceName,
+            step.agentServiceDescription,
+            step.agent.endpoint,
+            plan.goal
+          );
+          inferredMethod = inferred.method;
+          inferredBody = inferred.body;
+        }
+      }
+
+      // Build the list of formats to try — inferred first, then generics
+      const inputFormats: Record<string, unknown>[] = [];
+
+      if (inferredBody && Object.keys(inferredBody).length > 0) {
+        inputFormats.push(inferredBody);
+      }
+
+      // Add generic formats as fallbacks
+      const seen = new Set<string>();
+      for (const body of [
+        { q: plan.goal },
+        { prompt: plan.goal },
+        { query: plan.goal },
+        { input: plan.goal },
+        { text: plan.goal },
+        {},
+      ]) {
+        const key = JSON.stringify(body);
+        if (!seen.has(key)) {
+          seen.add(key);
+          inputFormats.push(body);
+        }
+      }
       
       // Deduplicate and try each format
       let lastError = "";

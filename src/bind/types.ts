@@ -15,11 +15,12 @@ export interface BindAgent {
 export interface BindStep {
   step: number;
   agent: BindAgent;
-  inputTemplate: Record<string, string>;   // param template, filled at exec time
+  agentServiceDescription?: string;
+  inputTemplate: Record<string, string>;
   verificationType: "data" | "content" | "code";
-  verificationCriteria?: string;           // what to verify (optional, can be LLM-generated)
-  fallbackAgent?: BindAgent;               // if this step fails verification
-  condition?: string;                      // when to skip this step
+  verificationCriteria?: string;
+  fallbackAgent?: BindAgent;
+  condition?: string;
 }
 
 export interface BindPlan {

@@ -70,6 +70,8 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     const cheapestService = agent.services.reduce((a, b) =>
       a.feeAmount <= b.feeAmount ? a : b
     );
+    // Store the full service description for param inference
+    const agentServiceDescription = cheapestService.description || agent.description;
     return {
       step: i + 1,
       agent: {
@@ -82,6 +84,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
         feeToken: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
         category: determineAgentRole(agent, req.goal) as any,
       },
+      agentServiceDescription,
       inputTemplate: { q: req.goal },
       verificationType: "data",
       verificationCriteria: "Agent returned structured output",

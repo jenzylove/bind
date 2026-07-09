@@ -30,6 +30,7 @@ function httpCall(method: string, url: string, bodyStr: string | null, auth?: st
 function getParams(endpoint: string, goal: string): { body: Record<string, unknown>; method: "POST" | "GET" } {
   const e = endpoint;
   const hasAddr = goal.includes("0x");
+  // Onchain Data Explorer (Agent 2023) — OKX Official
   if (e.includes("get_chain_info")) return { body: { chainIndex: "196" }, method: "POST" };
   if (e.includes("get_token_info")) return { body: { chainIndex: "196", tokenAddress: hasAddr ? goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736" }, method: "POST" };
   if (e.includes("get_address_profile")) return { body: { chainIndex: "196", address: hasAddr ? goal : "0x22700698c503be7dfdeaaacc2e4e41c767c263b" }, method: "POST" };
@@ -38,11 +39,22 @@ function getParams(endpoint: string, goal: string): { body: Record<string, unkno
   if (e.includes("get_transaction")) return { body: { chainIndex: "196", txHash: hasAddr ? goal : "0x" }, method: "POST" };
   if (e.includes("get_contract_source")) return { body: { chainIndex: "196", address: hasAddr ? goal : "0x" }, method: "POST" };
   if (e.includes("get_token_holders")) return { body: { chainIndex: "196", tokenAddress: hasAddr ? goal : "0x", n: 5 }, method: "POST" };
+  if (e.includes("get_address_transactions")) return { body: { chainIndex: "196", address: hasAddr ? goal : "0x22700698c503be7dfdeaaacc2e4e41c767c263b", limit: 3 }, method: "POST" };
+  if (e.includes("get_token_price")) return { body: { chainIndex: "196", tokenAddresses: [hasAddr ? goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736"] }, method: "POST" };
   if (e.includes("get_event_logs")) return { body: { chainIndex: "196", by: "tx", txHash: "0x" }, method: "POST" };
-  if (e.includes("barker_defi_vaults") || e.includes("barker_market_overview")) return { body: {}, method: "POST" };
+  if (e.includes("list_chains")) return { body: {}, method: "POST" };
+  if (e.includes("universal_search")) return { body: { input: hasAddr ? goal : "0x" }, method: "POST" };
+  // NewsLiquid (Agent 2135)
   if (e.includes("news_search") || e.includes("news_type")) return { body: { q: goal }, method: "POST" };
   if (e.includes("twitter_user_tweets")) return { body: { username: "Dollar782", maxResults: "3" }, method: "POST" };
-  if (e.includes("etf") || e.includes("coinank")) return { body: {}, method: "GET" };
+  if (e.includes("twitter_user_info")) return { body: { username: "Dollar782" }, method: "POST" };
+  if (e.includes("twitter_search")) return { body: { keywords: goal }, method: "POST" };
+  // CoinAnk (Agent 2013) — Most are GET requests
+  if (e.includes("coinank") || e.includes("getUsBtcEtf") || e.includes("getUsEthEtf") || e.includes("getLastPrice") || e.includes("getCoinMarketCap")) return { body: {}, method: "GET" };
+  // Barker Yield (Agent 2012)
+  if (e.includes("barker_defi_vaults") || e.includes("barker_market_overview") || e.includes("barker_market_trend")) return { body: {}, method: "POST" };
+  if (e.includes("barker_yield_advisor")) return { body: { limit: 5 }, method: "POST" };
+  // Generic fallback
   return { body: { q: goal }, method: "POST" };
 }
 

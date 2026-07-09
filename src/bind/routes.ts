@@ -112,18 +112,60 @@ bindRouter.get("/test-agent", async (_req, res) => {
     // Login
     try {
       execSync(`${ONCHAINOS_PATH} wallet login`, { timeout: 10000 });
-      results.push("Login OK");
-    } catch { results.push("Login FAILED"); }
+      results.push("1. Login OK");
+    } catch { results.push("1. Login FAILED"); }
 
-    // Call Chain Info endpoint
+    // Call Chain Info endpoint with correct params
+    let challenge = "";
     try {
       const resp = execSync(
         `curl -s --max-time 10 "https://www.oklink.com/api/v5/explorer/mcp/x402/get_chain_info" -H "Content-Type: application/json" -d '{"chainIndex":"196"}'`,
         { timeout: 15000, encoding: "utf8" }
       );
-      results.push(`Call OK: ${resp.slice(0, 100)}`);
+      challenge = resp;
+      results.push("2. Call OK — got 402 challenge");
     } catch (e: any) {
-      results.push(`Call FAILED: ${e.message}`);
+      results.push(`2. Call FAILED: ${e.message}`);
+    }
+
+    // Sign payment
+    let authHeader = "";
+    if (challenge) {
+      try {
+        const payload = Buffer.from(challenge).toString("base64");
+        const signed = execSync(
+          `${ONCHAINOS_PATH} payment pay --payload '${payload}'`,
+          { timeout: 30000, encoding: "utf8" }
+        );
+        authHeader = JSON.parse(signed).data.authorization_header;
+        results.push("3. Payment signed OK");
+      } catch (e: any) {
+        results.push(`3. Payment FAILED: ${e.message}`);
+      }
+    }
+
+    // Replay with Authorization: X402
+    if (authHeader) {
+      try {
+        const paid = execSync(
+          `curl -s --max-time 10 "https://www.oklink.com/api/v5/explorer/mcp/x402/get_chain_info" -H "Content-Type: application/json" -H "Authorization: X402 ${authHeader}" -d '{"chainIndex":"196"}'`,
+          { timeout: 15000, encoding: "utf8" }
+        );
+        results.push(`4. X402 header result: ${paid.slice(0, 100)}`);
+      } catch (e: any) {
+        results.push(`4. X402 header FAILED: ${e.message}`);
+      }
+
+      // Replay with PAYMENT-SIGNATURE
+      try {
+        const paid = execSync(
+          `curl -s --max-time 10 "https://www.oklink.com/api/v5/explorer/mcp/x402/get_chain_info" -H "Content-Type: application/json" -H "PAYMENT-SIGNATURE: ${authHeader}" -d '{"chainIndex":"196"}'`,
+          { timeout: 15000, encoding: "utf8" }
+        );
+        results.push(`5. PAYMENT-SIGNATURE result: ${paid.slice(0, 100)}`);
+      } catch (e: any) {
+        results.push(`5. PAYMENT-SIGNATURE FAILED: ${e.message}`);
+      }
     }
 
     res.json({ ok: true, results });

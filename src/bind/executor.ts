@@ -132,7 +132,11 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
         "twitter_user_tweets": { username: "Dollar782", maxResults: "3" },
       };
 
-      if (!inferredBody || Object.keys(inferredBody).length === 0) {
+      // If inference failed, produced only generic fallback, or empty body, use known-good defaults
+      const genericKeys = ["q", "prompt", "query", "input", "text"];
+      const isGenericFallback = inferredBody && Object.keys(inferredBody).length === 1 && genericKeys.includes(Object.keys(inferredBody)[0]);
+
+      if (!inferredBody || Object.keys(inferredBody).length === 0 || isGenericFallback) {
         for (const [pattern, params] of Object.entries(knownEndpoints)) {
           if (step.agent.endpoint.includes(pattern)) {
             inferredBody = params;

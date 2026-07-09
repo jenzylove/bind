@@ -84,7 +84,12 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
       for (const fmt of inputFormats) {
         const body = JSON.stringify(fmt);
         result.input = fmt;
-        const initial = httpCall("POST", step.agent.endpoint, body);
+        let initial = httpCall("POST", step.agent.endpoint, body);
+
+        // If POST fails with 405, try GET
+        if (initial.status === 405) {
+          initial = httpCall("GET", step.agent.endpoint, null);
+        }
 
         if (initial.status === 200) {
           result.output = JSON.parse(initial.body || "{}");

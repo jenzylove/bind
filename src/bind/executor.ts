@@ -136,6 +136,9 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
       const genericKeys = ["q", "prompt", "query", "input", "text"];
       const isGenericFallback = inferredBody && Object.keys(inferredBody).length === 1 && genericKeys.includes(Object.keys(inferredBody)[0]);
 
+      // Debug: log what we have
+      const debugInfo: Record<string, string | boolean> = { inferredBody: JSON.stringify(inferredBody), isGenericFallback: String(isGenericFallback), serviceDescLen: String(serviceDesc.length), endpoint: step.agent.endpoint };
+
       if (!inferredBody || Object.keys(inferredBody).length === 0 || isGenericFallback) {
         for (const [pattern, params] of Object.entries(knownEndpoints)) {
           if (step.agent.endpoint.includes(pattern)) {

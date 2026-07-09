@@ -68,61 +68,71 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     };
 
     try {
-      const body = JSON.stringify({ ...step.inputTemplate });
-      result.input = JSON.parse(body);
+      // Try multiple input formats since agents use different parameter names
+      const inputFormats = [
+        { ...step.inputTemplate, q: plan.goal },
+        { ...step.inputTemplate, prompt: plan.goal },
+        { ...step.inputTemplate, query: plan.goal },
+        { ...step.inputTemplate, input: plan.goal },
+        { ...step.inputTemplate, text: plan.goal },
+      ];
+      
+      // Deduplicate and try each format
+      let lastError = "";
+      let success = false;
 
-      // Step 1: Call the agent, expect 402
-      const initial = httpCall("POST", step.agent.endpoint, body);
+      for (const fmt of inputFormats) {
+        const body = JSON.stringify(fmt);
+        result.input = fmt;
+        const initial = httpCall("POST", step.agent.endpoint, body);
 
-      if (initial.status === 200) {
-        result.output = JSON.parse(initial.body || "{}");
-        result.status = "passed";
-        result.paymentTxHash = "no_payment_needed";
-
-      } else if (initial.status === 402) {
-        // Step 2: Parse the x402 challenge (could be in body or payment-required header)
-        let challenge = parseChallenge(initial.body);
-        if (!challenge || !challenge.accepts) {
-          // Try reading from payment-required header
-          const prHeader = initial.headers["payment-required"];
-          if (prHeader) {
-            try {
-              const decoded = JSON.parse(Buffer.from(prHeader, "base64").toString());
-              challenge = decoded;
-            } catch { /* fall through */ }
-          }
+        if (initial.status === 200) {
+          result.output = JSON.parse(initial.body || "{}");
+          result.status = "passed";
+          result.paymentTxHash = "no_payment_needed";
+          success = true;
+          break;
         }
-        if (!challenge || !challenge.accepts) {
-          result.status = "errored";
-          result.error = "Invalid x402 challenge from agent";
-          allPassed = false;
-        } else {
-          // Step 3: Sign the payment via TEE wallet
-          const authHeader = signPayment(challenge);
-          if (!authHeader) {
-            result.status = "errored";
-            result.error = "Payment signing failed — is the wallet logged in?";
-            allPassed = false;
-          } else {
-            // Step 4: Replay with payment signature
-            const paid = httpCall("POST", step.agent.endpoint, body, authHeader);
-            if (paid.status === 200) {
-              result.output = JSON.parse(paid.body || "{}");
-              result.status = "passed";
-              totalPaid += step.agent.feeAmount;
-              result.paymentTxHash = "paid_via_x402";
-            } else {
-              result.status = "errored";
-              result.error = `Paid call returned ${paid.status}`;
-              result.output = paid.body;
-              allPassed = false;
+
+        if (initial.status === 402) {
+          // Parse x402 challenge from body or header
+          let challenge = parseChallenge(initial.body);
+          if (!challenge || !challenge.accepts) {
+            const prHeader = initial.headers["payment-required"];
+            if (prHeader) {
+              try {
+                const decoded = JSON.parse(Buffer.from(prHeader, "base64").toString());
+                challenge = decoded;
+              } catch { /* skip */ }
             }
           }
+          if (challenge && challenge.accepts) {
+            const authHeader = signPayment(challenge);
+            if (authHeader) {
+              const paid = httpCall("POST", step.agent.endpoint, body, authHeader);
+              if (paid.status === 200) {
+                result.output = JSON.parse(paid.body || "{}");
+                result.status = "passed";
+                totalPaid += step.agent.feeAmount;
+                result.paymentTxHash = "paid_via_x402";
+                success = true;
+                break;
+              }
+              lastError = `Paid call returned ${paid.status}`;
+            } else {
+              lastError = "Payment signing failed";
+            }
+          } else {
+            lastError = "Could not parse x402 challenge";
+          }
+        } else {
+          lastError = `HTTP ${initial.status}`;
         }
-      } else {
+      }
+
+      if (!success) {
         result.status = "errored";
-        result.error = `Agent returned HTTP ${initial.status}`;
-        result.output = initial.body;
+        result.error = lastError || "All request formats failed";
         allPassed = false;
       }
 

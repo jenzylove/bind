@@ -12,16 +12,24 @@ function ensureLoggedIn(): boolean {
   } catch { return false; }
 }
 
-function httpCall(method: string, url: string, body: string | null, authHeader?: string): { status: number; body: string } {
+function httpCall(method: string, url: string, body: string | null, authHeader?: string): { status: number; body: string; headers: Record<string, string> } {
   const authFlag = authHeader ? `-H 'PAYMENT-SIGNATURE: ${authHeader}'` : "";
   const bodyFlag = body ? `-d '${body.replace(/'/g, "'\\''")}'` : "";
   const result = execSync(
-    `curl -s -w "\\n%{http_code}" --max-time 15 -X ${method} '${url}' -H 'Content-Type: application/json' ${authFlag} ${bodyFlag}`,
+    `curl -sD - --max-time 15 -X ${method} '${url}' -H 'Content-Type: application/json' ${authFlag} ${bodyFlag}`,
     { timeout: 20000, encoding: "utf8" }
   );
-  const lines = result.trim().split("\n");
-  const status = parseInt(lines[lines.length - 1], 10);
-  return { status, body: lines.slice(0, -1).join("\n") };
+  const headerEnd = result.indexOf("\r\n\r\n");
+  const headerBlock = result.slice(0, headerEnd);
+  const responseBody = result.slice(headerEnd + 4).trim();
+  const statusLine = headerBlock.split("\r\n")[0];
+  const status = parseInt(statusLine.split(" ")[1], 10);
+  const headers: Record<string, string> = {};
+  for (const line of headerBlock.split("\r\n").slice(1)) {
+    const colon = line.indexOf(":");
+    if (colon > 0) headers[line.slice(0, colon).trim().toLowerCase()] = line.slice(colon + 1).trim();
+  }
+  return { status, body: responseBody, headers };
 }
 
 function parseChallenge(body: string): Record<string, unknown> | null {
@@ -72,8 +80,18 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
         result.paymentTxHash = "no_payment_needed";
 
       } else if (initial.status === 402) {
-        // Step 2: Parse the x402 challenge
-        const challenge = parseChallenge(initial.body);
+        // Step 2: Parse the x402 challenge (could be in body or payment-required header)
+        let challenge = parseChallenge(initial.body);
+        if (!challenge || !challenge.accepts) {
+          // Try reading from payment-required header
+          const prHeader = initial.headers["payment-required"];
+          if (prHeader) {
+            try {
+              const decoded = JSON.parse(Buffer.from(prHeader, "base64").toString());
+              challenge = decoded;
+            } catch { /* fall through */ }
+          }
+        }
         if (!challenge || !challenge.accepts) {
           result.status = "errored";
           result.error = "Invalid x402 challenge from agent";

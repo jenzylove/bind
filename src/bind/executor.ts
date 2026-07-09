@@ -1,49 +1,55 @@
-// Bind execution engine — actually calls agents, reports honestly, returns real output
+// Bind execution engine — real agent calls with x402 payment, real results
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import type { BindExecution, BindPlan, ExecutionResult } from "./types.js";
 
 const ONCHAINOS_PATH = process.env.HOME + "/.local/bin/onchainos";
 
-export class BindExecutionError extends Error {
-  constructor(msg: string) { super(msg); this.name = "BindExecutionError"; }
-}
-
-function callAgent(endpoint: string, body: Record<string, unknown>): { status: number; data: unknown } {
+function ensureLoggedIn(): boolean {
   try {
-    const bodyStr = JSON.stringify(body).replace(/'/g, "'\\''");
-    const result = execSync(
-      `curl -s -w "\\n%{http_code}" --max-time 10 '${endpoint}' -H 'Content-Type: application/json' -d '${bodyStr}'`,
-      { timeout: 15000, encoding: "utf8" }
-    );
-    const lines = result.trim().split("\n");
-    const httpCode = parseInt(lines[lines.length - 1], 10);
-    const responseBody = lines.slice(0, -1).join("\n");
-    return { status: httpCode, data: JSON.parse(responseBody || "null") };
-  } catch (e) {
-    return { status: 0, data: { error: (e as Error).message } };
-  }
+    execSync(`${ONCHAINOS_PATH} wallet login`, { timeout: 10000, encoding: "utf8" });
+    return true;
+  } catch { return false; }
 }
 
-function verifyOutput(output: unknown): { passed: boolean; detail: string } {
-  if (!output) return { passed: false, detail: "No output received" };
-  if (typeof output === "object" && output !== null) {
-    const obj = output as Record<string, unknown>;
-    if (obj.ok === false) return { passed: false, detail: `Agent error: ${obj.error || "unknown"}` };
-    if (obj.error) return { passed: false, detail: `Agent error: ${obj.error}` };
-    if (obj.data !== undefined) return { passed: true, detail: "Output received" };
-  }
-  if (typeof output === "string" && output.length > 0) return { passed: true, detail: "Output received" };
-  return { passed: true, detail: "Output received" };
+function httpCall(method: string, url: string, body: string | null, authHeader?: string): { status: number; body: string } {
+  const authFlag = authHeader ? `-H 'PAYMENT-SIGNATURE: ${authHeader}'` : "";
+  const bodyFlag = body ? `-d '${body.replace(/'/g, "'\\''")}'` : "";
+  const result = execSync(
+    `curl -s -w "\\n%{http_code}" --max-time 15 -X ${method} '${url}' -H 'Content-Type: application/json' ${authFlag} ${bodyFlag}`,
+    { timeout: 20000, encoding: "utf8" }
+  );
+  const lines = result.trim().split("\n");
+  const status = parseInt(lines[lines.length - 1], 10);
+  return { status, body: lines.slice(0, -1).join("\n") };
+}
+
+function parseChallenge(body: string): Record<string, unknown> | null {
+  try { return JSON.parse(body); } catch { return null; }
+}
+
+function signPayment(challenge: Record<string, unknown>): string | null {
+  try {
+    // Build the payload format onchainos payment pay expects
+    const payload = Buffer.from(JSON.stringify(challenge)).toString("base64");
+    const result = execSync(
+      `${ONCHAINOS_PATH} payment pay --payload '${payload}'`,
+      { timeout: 30000, encoding: "utf8" }
+    );
+    const parsed = JSON.parse(result);
+    if (!parsed.ok) return null;
+    return parsed.data.authorization_header || null;
+  } catch { return null; }
 }
 
 export async function executePlan(plan: BindPlan): Promise<BindExecution> {
+  ensureLoggedIn();
   const executionId = randomUUID();
   const stepResults: ExecutionResult[] = [];
   let allPassed = true;
   let totalPaid = 0;
-  const outputs: Record<number, unknown> = {};
-  let finalOutput = "";
+  const outputs: string[] = [];
+  let anchorTxHash: string | undefined;
 
   for (const step of plan.steps) {
     const result: ExecutionResult = {
@@ -54,41 +60,61 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     };
 
     try {
-      const input = { ...step.inputTemplate };
-      result.input = input;
+      const body = JSON.stringify({ ...step.inputTemplate });
+      result.input = JSON.parse(body);
 
-      // Try calling the agent directly
-      const response = callAgent(step.agent.endpoint, input);
+      // Step 1: Call the agent, expect 402
+      const initial = httpCall("POST", step.agent.endpoint, body);
 
-      if (response.status === 200) {
-        result.output = response.data;
-        outputs[step.step] = response.data;
-        const verification = verifyOutput(response.data);
-        result.verificationResult = verification;
-        result.status = verification.passed ? "passed" : "failed";
-        if (verification.passed) {
-          totalPaid += step.agent.feeAmount;
-          result.paymentTxHash = "no_payment_needed";
+      if (initial.status === 200) {
+        result.output = JSON.parse(initial.body || "{}");
+        result.status = "passed";
+        result.paymentTxHash = "no_payment_needed";
+
+      } else if (initial.status === 402) {
+        // Step 2: Parse the x402 challenge
+        const challenge = parseChallenge(initial.body);
+        if (!challenge || !challenge.accepts) {
+          result.status = "errored";
+          result.error = "Invalid x402 challenge from agent";
+          allPassed = false;
+        } else {
+          // Step 3: Sign the payment via TEE wallet
+          const authHeader = signPayment(challenge);
+          if (!authHeader) {
+            result.status = "errored";
+            result.error = "Payment signing failed — is the wallet logged in?";
+            allPassed = false;
+          } else {
+            // Step 4: Replay with payment signature
+            const paid = httpCall("POST", step.agent.endpoint, body, authHeader);
+            if (paid.status === 200) {
+              result.output = JSON.parse(paid.body || "{}");
+              result.status = "passed";
+              totalPaid += step.agent.feeAmount;
+              result.paymentTxHash = "paid_via_x402";
+            } else {
+              result.status = "errored";
+              result.error = `Paid call returned ${paid.status}`;
+              result.output = paid.body;
+              allPassed = false;
+            }
+          }
         }
-      } else if (response.status === 402) {
-        // Agent requires payment
-        result.output = { note: "Agent requires x402 payment", challenge: response.data };
-        result.status = "failed";
-        result.verificationResult = { passed: false, detail: "Agent requires payment which is not yet wired" };
       } else {
-        // Agent unreachable or error
-        result.output = response.data;
-        result.status = "failed";
-        result.verificationResult = { passed: false, detail: `Agent returned error` };
-      }
-
-      if (result.status === "failed") {
+        result.status = "errored";
+        result.error = `Agent returned HTTP ${initial.status}`;
+        result.output = initial.body;
         allPassed = false;
       }
 
-    } catch (e) {
+      if (result.status === "passed" && result.output) {
+        outputs.push(`[${step.agent.name}]\n${JSON.stringify(result.output, null, 2)}`);
+      }
+
+    } catch (e: any) {
       result.status = "errored";
-      result.error = (e as Error).message;
+      result.error = e.message || String(e);
       allPassed = false;
     }
 
@@ -96,13 +122,10 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     stepResults.push(result);
   }
 
-  // Build final output from what we got
-  const successOutputs = Object.entries(outputs)
-    .map(([step, data]) => `Step ${step}: ${JSON.stringify(data, null, 2)}`)
-    .join("\n\n");
-  finalOutput = successOutputs || "No agent outputs were successfully retrieved.";
-
   const completedSteps = stepResults.filter(r => r.status === "passed").length;
+  const finalOutput = outputs.length > 0
+    ? outputs.join("\n\n---\n\n")
+    : "No agent outputs were successfully retrieved. Check the execution log for details.";
 
   return {
     executionId,
@@ -114,6 +137,8 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     totalPaid,
     totalSteps: plan.steps.length,
     completedSteps,
+    anchorTxHash,
     createdAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
   };
 }

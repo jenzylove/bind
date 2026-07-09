@@ -54,11 +54,19 @@ export function extractParamsFast(description: string): { required: string[]; op
   const optional: string[] = [];
   const example: Record<string, string> = {};
 
-  // Extract "Requires X, Y" or "Required: X, Y" patterns
-  const reqMatch = description.match(/(?:requires?|required)[:\s]+([^.]+)/i);
+  // Extract "Requires X, Y" or "Required: X, Y" or "Requires X, Y and Z" patterns
+  const reqMatch = description.match(/(?:requires?|required)[:\s]+([^.]+?)(?:\s*\.\s|$)/i);
   if (reqMatch) {
     reqMatch[1].split(",").forEach((p) => {
-      const trimmed = p.trim().split("=")[0].trim(); // "chainIndex=1" → "chainIndex"
+      const trimmed = p.trim().split("=")[0].trim().split(/\s+/)[0].trim(); // "chainIndex=1" → "chainIndex", "address" → "address"
+      if (trimmed && trimmed !== "optional") required.push(trimmed);
+    });
+  }
+  // Try also "POST only. Requires chainIndex, address." pattern
+  const reqMatch2 = description.match(/requires[:\s]+([^.]+?)(?:\s*\.\s|$)/i);
+  if (reqMatch2 && !reqMatch) {
+    reqMatch2[1].split(",").forEach((p) => {
+      const trimmed = p.trim().split("=")[0].trim().split(/\s+/)[0].trim();
       if (trimmed) required.push(trimmed);
     });
   }

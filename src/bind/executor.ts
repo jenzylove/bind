@@ -90,7 +90,7 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     try {
       // Fetch detailed service description if the profile description is generic
       let serviceDesc = step.agentServiceDescription || "";
-      if (!serviceDesc.toLowerCase().includes("requires") && !serviceDesc.toLowerCase().includes("param")) {
+      if (!serviceDesc.toLowerCase().includes("requires") && !serviceDesc.toLowerCase().includes("param") && !serviceDesc.toLowerCase().includes("optional")) {
         const detail = fetchServiceDescription(step.agent.agentId, step.agent.serviceId, step.agent.serviceName);
         if (detail) serviceDesc = detail;
       }
@@ -102,14 +102,12 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
       if (serviceDesc) {
         const fast = extractParamsFast(serviceDesc);
         if (fast) {
-          // Build body from extracted params — fill with goal where appropriate
           const body: Record<string, string> = {};
           for (const p of fast.required) {
             body[p] = plan.goal.includes("0x") ? plan.goal : plan.goal;
           }
           inferredBody = { ...body, ...fast.example };
         } else {
-          // Fall back to LLM inference
           const inferred = await inferParams(
             step.agent.serviceName,
             serviceDesc,
@@ -118,6 +116,28 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
           );
           inferredMethod = inferred.method;
           inferredBody = inferred.body;
+        }
+      }
+
+      // If inference failed or produced empty body, use known-good defaults for common agents
+      const knownEndpoints: Record<string, Record<string, unknown>> = {
+        "get_chain_info": { chainIndex: "196" },
+        "get_token_info": { chainIndex: "196", tokenAddress: plan.goal.includes("0x") ? plan.goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736" },
+        "get_address_profile": { chainIndex: "196", address: plan.goal.includes("0x") ? plan.goal : "0x22700698c503be7dfdeaaacc2e4e41c767c263b" },
+        "get_token_price_history": { chainIndex: "196", tokenAddress: plan.goal.includes("0x") ? plan.goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736", granularity: "1D" },
+        "kol-sentiment": { token: "ETH" },
+        "barker_defi_vaults": {},
+        "barker_market_overview": {},
+        "news_search": { q: plan.goal },
+        "twitter_user_tweets": { username: "Dollar782", maxResults: "3" },
+      };
+
+      if (!inferredBody || Object.keys(inferredBody).length === 0) {
+        for (const [pattern, params] of Object.entries(knownEndpoints)) {
+          if (step.agent.endpoint.includes(pattern)) {
+            inferredBody = params;
+            break;
+          }
         }
       }
 

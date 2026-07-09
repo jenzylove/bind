@@ -101,3 +101,33 @@ bindRouter.get("/search", async (req, res) => {
     res.status(422).json({ error: "search_failed", message: (e as Error).message });
   }
 });
+
+// Test x402 flow directly
+bindRouter.get("/test-agent", async (_req, res) => {
+  try {
+    const { execSync } = await import("node:child_process");
+    const ONCHAINOS_PATH = process.env.HOME + "/.local/bin/onchainos";
+    const results: string[] = [];
+
+    // Login
+    try {
+      execSync(`${ONCHAINOS_PATH} wallet login`, { timeout: 10000 });
+      results.push("Login OK");
+    } catch { results.push("Login FAILED"); }
+
+    // Call Chain Info endpoint
+    try {
+      const resp = execSync(
+        `curl -s --max-time 10 "https://www.oklink.com/api/v5/explorer/mcp/x402/get_chain_info" -H "Content-Type: application/json" -d '{"chainIndex":"196"}'`,
+        { timeout: 15000, encoding: "utf8" }
+      );
+      results.push(`Call OK: ${resp.slice(0, 100)}`);
+    } catch (e: any) {
+      results.push(`Call FAILED: ${e.message}`);
+    }
+
+    res.json({ ok: true, results });
+  } catch (e) {
+    res.json({ ok: false, error: (e as Error).message });
+  }
+});

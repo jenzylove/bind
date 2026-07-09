@@ -32,8 +32,16 @@ function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
 }
 
 export async function createPlan(req: PlanRequest): Promise<BindPlan> {
+  // Priority agents — known to have working x402 endpoints with documented params
+  const priorityAgentIds = new Set(["2023", "2135", "2013", "2012", "1965"]);
+  
   // Search the marketplace for agents matching the goal
-  const matchedAgents = await findMatchingAgents(req.goal);
+  let matchedAgents = await findMatchingAgents(req.goal);
+
+  // Promote priority agents to the front if they match the goal
+  const priorityMatches = matchedAgents.filter(a => priorityAgentIds.has(a.agentId));
+  const otherMatches = matchedAgents.filter(a => !priorityAgentIds.has(a.agentId));
+  matchedAgents = [...priorityMatches, ...otherMatches];
 
   // Pick the best 2-4 agents ensuring diverse roles
   const selectedAgents: MarketplaceAgent[] = [];

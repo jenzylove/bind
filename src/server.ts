@@ -30,6 +30,11 @@ app.get("/bind/app", (_req, res) => {
   res.sendFile(join(PUBLIC_DIR, "bind.html"));
 });
 
+// Design preview (work in progress)
+app.get("/bind/preview", (_req, res) => {
+  res.sendFile(join(PUBLIC_DIR, "bind-preview.html"));
+});
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true, ...SERVICE, paymentConfigured: isConfiguredForPayment() });
 });

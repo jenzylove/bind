@@ -13,6 +13,23 @@ function ensureLoggedIn(): boolean {
   } catch { return false; }
 }
 
+function fetchServiceDescription(agentId: string, serviceId: string, serviceName?: string): string | null {
+  try {
+    const result = execSync(
+      `${ONCHAINOS_PATH} agent service-list --agent-id ${agentId}`,
+      { timeout: 10000, encoding: "utf8" }
+    );
+    const parsed = JSON.parse(result);
+    if (!parsed.ok || !parsed.data?.[0]?.list) return null;
+    for (const entry of parsed.data[0].list) {
+      if (entry.serviceName === serviceName || String(entry.id) === serviceId) {
+        return entry.serviceDescription || null;
+      }
+    }
+    return parsed.data[0].list[0]?.serviceDescription || null;
+  } catch { return null; }
+}
+
 function httpCall(method: string, url: string, body: string | null, authHeader?: string): { status: number; body: string; headers: Record<string, string> } {
   const authFlag = authHeader ? `-H 'PAYMENT-SIGNATURE: ${authHeader}'` : "";
   const bodyFlag = body ? `-d '${body.replace(/'/g, "'\\''")}'` : "";
@@ -69,12 +86,19 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     };
 
     try {
+      // Fetch detailed service description if the profile description is generic
+      let serviceDesc = step.agentServiceDescription || "";
+      if (!serviceDesc.toLowerCase().includes("requires") && !serviceDesc.toLowerCase().includes("param")) {
+        const detail = fetchServiceDescription(step.agent.agentId, step.agent.serviceId, step.agent.serviceName);
+        if (detail) serviceDesc = detail;
+      }
+
       // Step 1: Try to infer correct parameters from service description
       let inferredBody: Record<string, unknown> | null = null;
       let inferredMethod: "POST" | "GET" = "POST";
 
-      if (step.agentServiceDescription) {
-        const fast = extractParamsFast(step.agentServiceDescription);
+      if (serviceDesc) {
+        const fast = extractParamsFast(serviceDesc);
         if (fast) {
           // Build body from extracted params — fill with goal where appropriate
           const body: Record<string, string> = {};
@@ -86,7 +110,7 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
           // Fall back to LLM inference
           const inferred = await inferParams(
             step.agent.serviceName,
-            step.agentServiceDescription,
+            serviceDesc,
             step.agent.endpoint,
             plan.goal
           );

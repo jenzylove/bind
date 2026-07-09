@@ -206,10 +206,10 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
           if (challenge && challenge.accepts) {
             const authHeader = signPayment(challenge);
             if (authHeader) {
-              // Try both header formats — OKX uses Authorization: X402, others use PAYMENT-SIGNATURE
-              let paid = httpCall("POST", step.agent.endpoint, body, authHeader, "x402");
+              // Try both header formats — PAYMENT-SIGNATURE first (works for OKX), then Authorization: X402
+              let paid = httpCall("POST", step.agent.endpoint, body, authHeader, "payment");
               if (paid.status !== 200) {
-                paid = httpCall("POST", step.agent.endpoint, body, authHeader, "payment");
+                paid = httpCall("POST", step.agent.endpoint, body, authHeader, "x402");
               }
               if (paid.status === 200) {
                 result.output = JSON.parse(paid.body || "{}");

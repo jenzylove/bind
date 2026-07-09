@@ -28,8 +28,9 @@ export interface BindPlan {
   steps: BindStep[];
   totalPriceUsdt: number;
   priceBreakdown: { agentName: string; fee: number; }[];
-  estimatedTime: string;                   // "~30 seconds"
+  estimatedTime: string;
   createdAt: string;
+  note?: string;
 }
 
 export interface ExecutionResult {

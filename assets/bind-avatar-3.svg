@@ -1,0 +1,8 @@
+<!-- Option 3: Warm background, indigo rings, gold chain (Claude Code inspired) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="80" fill="#faf9f6"/>
+  <circle cx="195" cy="256" r="85" fill="none" stroke="#6366f1" stroke-width="32"/>
+  <circle cx="317" cy="256" r="85" fill="none" stroke="#d4a843" stroke-width="32"/>
+  <rect x="220" y="200" width="72" height="112" rx="10" fill="#faf9f6"/>
+  <rect x="228" y="208" width="56" height="96" rx="8" fill="none" stroke="#6366f1" stroke-width="4"/>
+</svg>

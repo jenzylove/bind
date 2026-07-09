@@ -1,0 +1,14 @@
+<!-- Option 2: Deep indigo + cyan rings -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="80" fill="#0c0c1d"/>
+  <circle cx="195" cy="256" r="85" fill="none" stroke="url(#g1)" stroke-width="32"/>
+  <circle cx="317" cy="256" r="85" fill="none" stroke="#38bdf8" stroke-width="32"/>
+  <rect x="220" y="200" width="72" height="112" rx="10" fill="#0c0c1d"/>
+  <rect x="228" y="208" width="56" height="96" rx="8" fill="none" stroke="url(#g1)" stroke-width="4"/>
+</svg>

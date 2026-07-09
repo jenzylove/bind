@@ -1,0 +1,10 @@
+<!-- Option 1: Deep blue + warm off-white + gold accent -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="80" fill="#0f172a"/>
+  <circle cx="195" cy="256" r="85" fill="none" stroke="#e2e8f0" stroke-width="32"/>
+  <circle cx="317" cy="256" r="85" fill="none" stroke="#d4a843" stroke-width="32"/>
+  <rect x="220" y="200" width="72" height="112" rx="10" fill="#0f172a"/>
+  <rect x="228" y="208" width="56" height="96" rx="8" fill="none" stroke="#e2e8f0" stroke-width="4"/>
+  <circle cx="195" cy="256" r="95" fill="none" stroke="#e2e8f022" stroke-width="48"/>
+  <circle cx="317" cy="256" r="95" fill="none" stroke="#d4a84333" stroke-width="48"/>
+</svg>

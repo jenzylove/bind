@@ -1,120 +1,94 @@
-// Bind planner: goal decomposition into multi-agent plan with flat price
+// Bind planner: goal decomposition into multi-agent plan
+// Uses live marketplace search — no hardcoded agent catalog
+
 import { randomUUID } from "node:crypto";
-import type { BindPlan, BindStep, PlanRequest, PlanTemplate } from "./types.js";
-import { getCheapestByCategory, AGENT_CATALOG } from "./agents.js";
+import type { BindPlan, BindStep, PlanRequest } from "./types.js";
+import { findMatchingAgents, type MarketplaceAgent } from "./marketplace.js";
 
-const TEMPLATES: Record<PlanTemplate, { goalPattern: RegExp; description: string }> = {
-  due_diligence: {
-    goalPattern: /(safe|risk|audit|scan|check|token|contract|honeypot|rug)/i,
-    description: "Token due diligence, security scan, sentiment, market check",
-  },
-  market_brief: {
-    goalPattern: /(market|brief|overview|trend|analysis|research)/i,
-    description: "Market brief with data, sentiment, and analysis",
-  },
-  custom: {
-    goalPattern: /.*/,
-    description: "Custom goal analyzed against available agents",
-  },
-};
+function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
+  const desc = `${agent.name} ${agent.description}`.toLowerCase();
+  const goalLower = goal.toLowerCase();
 
-function detectTemplate(goal: string): PlanTemplate {
-  for (const [template, config] of Object.entries(TEMPLATES)) {
-    if (template === "custom") continue;
-    if (config.goalPattern.test(goal)) {
-      return template as PlanTemplate;
-    }
+  if (desc.includes("security") || desc.includes("scan") || desc.includes("risk") || desc.includes("audit") || desc.includes("verify")) {
+    return "security";
   }
-  return "custom";
+  if (desc.includes("sentiment") || desc.includes("social") || desc.includes("news") || desc.includes("twitter") || desc.includes("kol")) {
+    return "sentiment";
+  }
+  if (desc.includes("market") || desc.includes("data") || desc.includes("price") || desc.includes("trading") || desc.includes("derivatives")) {
+    return "market_data";
+  }
+  if (desc.includes("onchain") || desc.includes("explorer") || desc.includes("wallet") || desc.includes("blockchain")) {
+    return "onchain";
+  }
+  if (desc.includes("content") || desc.includes("image") || desc.includes("art") || desc.includes("video")) {
+    return "content";
+  }
+  if (desc.includes("swap") || desc.includes("yield") || desc.includes("stake") || desc.includes("defi")) {
+    return "defi";
+  }
+
+  return "general";
 }
 
-function buildSteps(template: PlanTemplate, goal: string, params: PlanRequest): BindStep[] {
-  switch (template) {
+export async function createPlan(req: PlanRequest): Promise<BindPlan> {
+  // Search the marketplace for agents matching the goal
+  const matchedAgents = await findMatchingAgents(req.goal);
 
-    case "due_diligence": {
-      const security = getCheapestByCategory("security");
-      const sentiment = getCheapestByCategory("sentiment");
-      const market = getCheapestByCategory("market_data");
-      const steps: BindStep[] = [];
+  // Pick the best 2-4 agents ensuring diverse roles
+  const selectedAgents: MarketplaceAgent[] = [];
+  const usedRoles = new Set<string>();
 
-      if (security) {
-        steps.push({
-          step: 1,
-          agent: security,
-          inputTemplate: { prompt: `Scan token ${params.tokenAddress || "this token"} for security risks` },
-          verificationType: "data",
-          verificationCriteria: "Security scan returned structured results with no critical errors",
-        });
-      }
-      if (sentiment) {
-        steps.push({
-          step: 2,
-          agent: sentiment,
-          inputTemplate: { tokenAddress: params.tokenAddress || "" },
-          verificationType: "data",
-          verificationCriteria: "Sentiment analysis returned risk metrics",
-          condition: "previous step passed",
-        });
-      }
-      if (market) {
-        steps.push({
-          step: 3,
-          agent: market,
-          inputTemplate: { q: params.tokenAddress ? `token ${params.tokenAddress}` : goal },
-          verificationType: "content",
-          verificationCriteria: "Market data returned with price and volume information",
-          condition: "previous step passed",
-        });
-      }
-      return steps;
-    }
+  for (const agent of matchedAgents) {
+    if (selectedAgents.length >= 4) break;
+    const role = determineAgentRole(agent, req.goal);
 
-    case "market_brief": {
-      const market = getCheapestByCategory("market_data");
-      const analysis = AGENT_CATALOG.find(a => a.category === "analysis" && a.name === "穿越牛熊简报");
-      const steps: BindStep[] = [];
-      if (market) {
-        steps.push({
-          step: 1,
-          agent: market,
-          inputTemplate: { q: goal },
-          verificationType: "data",
-          verificationCriteria: "Market data returned",
-        });
+    // Prefer agents with different roles for diversity
+    if (!usedRoles.has(role) || selectedAgents.length < 2) {
+      if (agent.services.length > 0) {
+        selectedAgents.push(agent);
+        usedRoles.add(role);
       }
-      if (analysis) {
-        steps.push({
-          step: 2,
-          agent: analysis,
-          inputTemplate: {},
-          verificationType: "content",
-          verificationCriteria: "Briefing content returned",
-          condition: "always",
-        });
-      }
-      return steps;
-    }
-
-    default: {
-      const market = getCheapestByCategory("market_data");
-      return market ? [
-        {
-          step: 1,
-          agent: market,
-          inputTemplate: { q: goal },
-          verificationType: "content",
-          verificationCriteria: "Response contains relevant information",
-        },
-      ] : [];
     }
   }
-}
 
-export function createPlan(req: PlanRequest): BindPlan {
-  const template = req.template || detectTemplate(req.goal);
-  const steps = buildSteps(template, req.goal, req);
+  // If no agents found, return empty plan
+  if (selectedAgents.length === 0) {
+    return {
+      planId: randomUUID(),
+      goal: req.goal,
+      steps: [],
+      totalPriceUsdt: 0,
+      priceBreakdown: [],
+      estimatedTime: "N/A",
+      createdAt: new Date().toISOString(),
+      note: "No compatible agents found on the marketplace for this goal. Try a different description.",
+    };
+  }
 
-  const priceBreakdown = steps.map(s => ({
+  const steps: BindStep[] = selectedAgents.map((agent, i) => {
+    const cheapestService = agent.services.reduce((a, b) =>
+      a.feeAmount <= b.feeAmount ? a : b
+    );
+    return {
+      step: i + 1,
+      agent: {
+        agentId: agent.agentId,
+        name: agent.name,
+        serviceId: cheapestService.serviceId,
+        serviceName: cheapestService.serviceName,
+        endpoint: cheapestService.endpoint,
+        feeAmount: cheapestService.feeAmount,
+        feeToken: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+        category: determineAgentRole(agent, req.goal) as any,
+      },
+      inputTemplate: { q: req.goal },
+      verificationType: "data",
+      verificationCriteria: "Agent returned structured output",
+    };
+  });
+
+  const priceBreakdown = steps.map((s) => ({
     agentName: s.agent.name,
     fee: s.agent.feeAmount,
   }));

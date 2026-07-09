@@ -3,15 +3,12 @@ import { Router } from "express";
 import type { PlanRequest } from "./types.js";
 import { createPlan } from "./planner.js";
 import { executePlan } from "./executor.js";
-import { AGENT_CATALOG } from "./agents.js";
 
 export const bindRouter = Router();
 
-// In-memory store for plans and executions (Phase 1 — file-backed in Phase 2)
-const plans = new Map<string, ReturnType<typeof createPlan>>();
+const plans = new Map<string, Awaited<ReturnType<typeof createPlan>>>();
 const executions = new Map<string, Awaited<ReturnType<typeof executePlan>>>();
 
-// Health check for Bind
 bindRouter.get("/health", (_req, res) => {
   res.json({
     service: "Bind",
@@ -21,8 +18,7 @@ bindRouter.get("/health", (_req, res) => {
   });
 });
 
-// POST /bind/plan — decompose a goal into a priced plan
-bindRouter.post("/plan", (req, res) => {
+bindRouter.post("/plan", async (req, res) => {
   try {
     const body = req.body as PlanRequest | undefined;
     if (!body?.goal || typeof body.goal !== "string" || body.goal.trim().length === 0) {
@@ -30,7 +26,7 @@ bindRouter.post("/plan", (req, res) => {
       return;
     }
 
-    const plan = createPlan({
+    const plan = await createPlan({
       goal: body.goal.trim(),
       tokenAddress: body.tokenAddress,
       template: body.template,
@@ -51,7 +47,6 @@ bindRouter.post("/plan", (req, res) => {
   }
 });
 
-// POST /bind/execute — execute a plan
 bindRouter.post("/execute", async (req, res) => {
   try {
     const body = req.body as { planId?: string } | undefined;
@@ -75,7 +70,6 @@ bindRouter.post("/execute", async (req, res) => {
   }
 });
 
-// GET /bind/status/:executionId — check execution progress
 bindRouter.get("/status/:executionId", (req, res) => {
   const execution = executions.get(req.params.executionId);
   if (!execution) {
@@ -85,15 +79,25 @@ bindRouter.get("/status/:executionId", (req, res) => {
   res.json(execution);
 });
 
-// GET /bind/catalog — list available agents Bind can orchestrate
-bindRouter.get("/catalog", (_req, res) => {
-  res.json({
-    count: AGENT_CATALOG.length,
-    agents: AGENT_CATALOG.map((a) => ({
-      agentId: a.agentId,
-      name: a.name,
-      category: a.category,
-      priceUsdt: a.feeAmount,
-    })),
-  });
+// Search the marketplace live
+bindRouter.get("/search", async (req, res) => {
+  try {
+    const query = typeof req.query.q === "string" ? req.query.q : "A2MCP";
+    const { findMatchingAgents } = await import("./marketplace.js");
+    const agents = await findMatchingAgents(query);
+    res.json({
+      count: agents.length,
+      agents: agents.map((a) => ({
+        agentId: a.agentId,
+        name: a.name,
+        category: a.category,
+        priceMin: a.priceMin,
+        rating: a.rating,
+        soldCount: a.soldCount,
+        services: a.services.length,
+      })),
+    });
+  } catch (e) {
+    res.status(422).json({ error: "search_failed", message: (e as Error).message });
+  }
 });

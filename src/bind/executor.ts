@@ -49,11 +49,20 @@ function getParams(endpoint: string, goal: string): { body: Record<string, unkno
   if (e.includes("twitter_user_tweets")) return { body: { username: "Dollar782", maxResults: "3" }, method: "POST" };
   if (e.includes("twitter_user_info")) return { body: { username: "Dollar782" }, method: "POST" };
   if (e.includes("twitter_search")) return { body: { keywords: goal }, method: "POST" };
+  if (e.includes("twitter_kol_followers")) return { body: { username: "Dollar782" }, method: "POST" };
+  if (e.includes("twitter_tweet_by_id") || e.includes("twitter_article_by_id")) return { body: { id: goal.includes(".") ? "" : goal }, method: "POST" };
   // CoinAnk (Agent 2013) — Most are GET requests
-  if (e.includes("coinank") || e.includes("getUsBtcEtf") || e.includes("getUsEthEtf") || e.includes("getLastPrice") || e.includes("getCoinMarketCap")) return { body: {}, method: "GET" };
+  if (e.includes("coinank") || e.includes("etf")) return { body: {}, method: "GET" };
+  if (e.includes("getLastPrice") || e.includes("getCoinMarketCap")) return { body: { symbol: "BTC" }, method: "GET" };
+  if (e.includes("liq") || e.includes("funding") || e.includes("longshort") || e.includes("position")) return { body: { symbol: "BTCUSDT" }, method: "GET" };
+  if (e.includes("tickers") || e.includes("instruments")) return { body: {}, method: "GET" };
+  if (e.includes("kline") || e.includes("agg")) return { body: { symbol: "BTCUSDT", interval: "1h" }, method: "GET" };
+  if (e.includes("news_list") || e.includes("getNewsList")) return { body: { limit: 5 }, method: "GET" };
   // Barker Yield (Agent 2012)
   if (e.includes("barker_defi_vaults") || e.includes("barker_market_overview") || e.includes("barker_market_trend")) return { body: {}, method: "POST" };
   if (e.includes("barker_yield_advisor")) return { body: { limit: 5 }, method: "POST" };
+  if (e.includes("barker_pool_search")) return { body: { q: goal }, method: "POST" };
+  if (e.includes("barker_pool_detail") || e.includes("barker_pool_history")) return { body: { poolUid: "" }, method: "POST" };
   // Generic fallback
   return { body: { q: goal }, method: "POST" };
 }

@@ -2,9 +2,9 @@
 // Caches results for 5 minutes so searches are fast
 // Refreshes automatically to pick up new agents
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
-const ONCHAINOS_PATH = process.env.HOME + "/.local/bin/onchainos";
+const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 interface CachedCatalog {
@@ -36,7 +36,7 @@ export interface MarketplaceService {
 
 function ensureLoggedIn(): boolean {
   try {
-    execSync(`${ONCHAINOS_PATH} wallet login`, { timeout: 10000, encoding: "utf8" });
+    execFileSync(ONCHAINOS_PATH, ["wallet", "login"], { timeout: 10000, encoding: "utf8" });
     return true;
   } catch {
     return false;
@@ -53,8 +53,9 @@ function fetchAllA2McpAgents(): MarketplaceAgent[] {
 
   for (const query of queries) {
     try {
-      const result = execSync(
-        `${ONCHAINOS_PATH} agent search --query "${query}" --status online --page-size 20`,
+      const result = execFileSync(
+        ONCHAINOS_PATH,
+        ["agent", "search", "--query", query, "--status", "online", "--page-size", "20"],
         { timeout: 10000, encoding: "utf8" }
       );
       const parsed = JSON.parse(result);
@@ -139,15 +140,15 @@ function scoreAgentRelevance(agent: MarketplaceAgent, goal: string): number {
   return score;
 }
 
-export async function findMatchingAgents(goal: string): Promise<MarketplaceAgent[]> {
+export async function findMatchingAgentsScored(goal: string): Promise<{ agent: MarketplaceAgent; score: number }[]> {
   const catalog = getCatalog();
-  const scored = catalog
+  return catalog
     .map((agent) => ({ agent, score: scoreAgentRelevance(agent, goal) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10)
-    .map((s) => s.agent);
+    .sort((a, b) => b.score - a.score);
+}
 
-  return scored;
+export async function findMatchingAgents(goal: string): Promise<MarketplaceAgent[]> {
+  return (await findMatchingAgentsScored(goal)).slice(0, 10).map((s) => s.agent);
 }
 
 export function getAgentCount(): number {

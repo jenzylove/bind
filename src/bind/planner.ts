@@ -3,7 +3,27 @@
 
 import { randomUUID } from "node:crypto";
 import type { BindPlan, BindStep, PlanRequest } from "./types.js";
-import { findMatchingAgents, type MarketplaceAgent } from "./marketplace.js";
+import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceService } from "./marketplace.js";
+
+// Guardrails so an auto-plan is never surprising or nonsensical.
+const PER_STEP_FEE_CEILING = 0.60; // never silently add a pricey agent (e.g. a $3.30 token launcher)
+const MAX_TOTAL_USDT = 1.5;        // cap the whole quote
+// Agents the executor has verified parameter mappings for — strongly preferred so
+// plans actually execute rather than erroring on wrong params.
+const EXECUTABLE_AGENT_IDS = new Set(["2023", "2135", "2013", "2012"]);
+
+// An analytical goal ("is this safe", "research X", "sentiment on Y") must never
+// select an agent whose job is to take an action (launch/mint/swap/deploy).
+function goalIsAnalytical(goal: string): boolean {
+  return /\b(safe|risk|research|analy|audit|check|is |are |should|vs\b|due diligence|sentiment|news|price|review|verify|scan|report|brief|explain|find|look up|holders?)\b/i.test(goal);
+}
+function isActionAgent(agent: MarketplaceAgent): boolean {
+  const t = `${agent.name} ${agent.description}`.toLowerCase();
+  return /(launch|mint|deploy|create token|token creation|swap|\bbuy\b|\bsell\b|bridge|stake|airdrop a)/.test(t);
+}
+function cheapestService(agent: MarketplaceAgent): MarketplaceService {
+  return agent.services.reduce((a, b) => (a.feeAmount <= b.feeAmount ? a : b));
+}
 
 function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
   const desc = `${agent.name} ${agent.description}`.toLowerCase();
@@ -32,35 +52,45 @@ function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
 }
 
 export async function createPlan(req: PlanRequest): Promise<BindPlan> {
-  // Priority agents — known to have working x402 endpoints with documented params
-  const priorityAgentIds = new Set(["2023", "2135", "2013", "2012", "1965"]);
-  
-  // Search the marketplace for agents matching the goal
-  let matchedAgents = await findMatchingAgents(req.goal);
+  const analytical = goalIsAnalytical(req.goal);
+  const scored = await findMatchingAgentsScored(req.goal);
 
-  // Promote priority agents to the front if they match the goal
-  const priorityMatches = matchedAgents.filter(a => priorityAgentIds.has(a.agentId));
-  const otherMatches = matchedAgents.filter(a => !priorityAgentIds.has(a.agentId));
-  matchedAgents = [...priorityMatches, ...otherMatches];
+  // Hard guardrails: must have a callable service, must be affordable, and must not
+  // be an action agent when the goal is analytical. These prevent the "surprise
+  // $3.30 meme-launcher on a safety question" failure mode.
+  const eligible = scored.filter(({ agent }) => {
+    if (agent.services.length === 0) return false;
+    if (cheapestService(agent).feeAmount > PER_STEP_FEE_CEILING) return false;
+    if (analytical && isActionAgent(agent)) return false;
+    return true;
+  });
 
-  // Pick the best 2-4 agents ensuring diverse roles
+  // Rank: agents the executor can call correctly first, then by relevance score.
+  eligible.sort((a, b) => {
+    const aExec = EXECUTABLE_AGENT_IDS.has(a.agent.agentId) ? 1 : 0;
+    const bExec = EXECUTABLE_AGENT_IDS.has(b.agent.agentId) ? 1 : 0;
+    if (aExec !== bExec) return bExec - aExec;
+    return b.score - a.score;
+  });
+
+  // Select up to 4, preferring role diversity, and never exceeding the total cap.
   const selectedAgents: MarketplaceAgent[] = [];
   const usedRoles = new Set<string>();
+  let runningTotal = 0;
 
-  for (const agent of matchedAgents) {
+  for (const { agent } of eligible) {
     if (selectedAgents.length >= 4) break;
+    const fee = cheapestService(agent).feeAmount;
+    if (runningTotal + fee > MAX_TOTAL_USDT) continue;
     const role = determineAgentRole(agent, req.goal);
-
-    // Prefer agents with different roles for diversity
-    if (!usedRoles.has(role) || selectedAgents.length < 2) {
-      if (agent.services.length > 0) {
-        selectedAgents.push(agent);
-        usedRoles.add(role);
-      }
-    }
+    // Prefer new roles for diversity; still allow same-role until we have 2 steps.
+    if (usedRoles.has(role) && selectedAgents.length >= 2) continue;
+    selectedAgents.push(agent);
+    usedRoles.add(role);
+    runningTotal += fee;
   }
 
-  // If no agents found, return empty plan
+  // If no agents qualify, return empty plan
   if (selectedAgents.length === 0) {
     return {
       planId: randomUUID(),
@@ -75,20 +105,18 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   }
 
   const steps: BindStep[] = selectedAgents.map((agent, i) => {
-    const cheapestService = agent.services.reduce((a, b) =>
-      a.feeAmount <= b.feeAmount ? a : b
-    );
+    const svc = cheapestService(agent);
     // Store the full service description for param inference
-    const agentServiceDescription = cheapestService.description || agent.description;
+    const agentServiceDescription = svc.description || agent.description;
     return {
       step: i + 1,
       agent: {
         agentId: agent.agentId,
         name: agent.name,
-        serviceId: cheapestService.serviceId,
-        serviceName: cheapestService.serviceName,
-        endpoint: cheapestService.endpoint,
-        feeAmount: cheapestService.feeAmount,
+        serviceId: svc.serviceId,
+        serviceName: svc.serviceName,
+        endpoint: svc.endpoint,
+        feeAmount: svc.feeAmount,
         feeToken: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
         category: determineAgentRole(agent, req.goal) as any,
       },

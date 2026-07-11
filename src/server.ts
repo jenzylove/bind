@@ -7,6 +7,7 @@ import { config, isConfiguredForPayment } from "./config.js";
 import { requirePayment } from "./x402.js";
 import { bindRouter } from "./bind/routes.js";
 import { renderBadge } from "./badge.js";
+import { loadExecution } from "./bind/store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "..", "public");
@@ -29,13 +30,9 @@ const SERVICE = {
   version: "0.1.0",
 };
 
-// Serve the web demo UI
-app.get("/app", (_req, res) => {
-  res.sendFile(join(PUBLIC_DIR, "app.html"));
-});
-
-// Serve the Bind-specific demo UI
-app.get("/bind/app", (_req, res) => {
+// Serve the web demo UI. Both /app and /bind/app resolve to the same page
+// (there is no separate app.html — pointing /app here fixes a 404).
+app.get(["/app", "/bind/app"], (_req, res) => {
   res.sendFile(join(PUBLIC_DIR, "bind.html"));
 });
 
@@ -75,9 +72,11 @@ app.get("/", (_req, res) => {
 // Bind — orchestrator routes
 app.use("/bind", bindRouter);
 
-// Status badge for Bind executions
-app.get("/badge/:executionId.svg", (_req, res) => {
-  res.type("image/svg+xml").set("Cache-Control", "no-cache").send(renderBadge("pass"));
+// Status badge for Bind executions — reflects the real execution outcome.
+app.get("/badge/:executionId.svg", (req, res) => {
+  const exec = loadExecution(req.params.executionId);
+  const state = !exec ? "unknown" : exec.status === "completed" ? "pass" : "fail";
+  res.type("image/svg+xml").set("Cache-Control", "no-cache").send(renderBadge(state));
 });
 
 const server = app.listen(config.port, () => {

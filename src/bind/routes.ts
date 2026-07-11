@@ -1,11 +1,14 @@
-// Bind — Express routes: /bind/plan, /bind/execute, /bind/status
+// Bind — Express routes: /bind/plan, /bind/execute, /bind/status, /bind/search
 import { Router } from "express";
 import type { PlanRequest } from "./types.js";
 import { createPlan } from "./planner.js";
 import { executePlan } from "./executor.js";
+import { savePlan, loadPlan, saveExecution, loadExecution } from "./store.js";
+import { findMatchingAgents } from "./marketplace.js";
 
 export const bindRouter = Router();
 
+// In-memory cache in front of the file store. Fast path; disk is the durable fallback.
 const plans = new Map<string, Awaited<ReturnType<typeof createPlan>>>();
 const executions = new Map<string, Awaited<ReturnType<typeof executePlan>>>();
 
@@ -33,6 +36,7 @@ bindRouter.post("/plan", async (req, res) => {
     });
 
     plans.set(plan.planId, plan);
+    savePlan(plan);
 
     res.json({
       plan,
@@ -55,7 +59,7 @@ bindRouter.post("/execute", async (req, res) => {
       return;
     }
 
-    const plan = plans.get(body.planId);
+    const plan = plans.get(body.planId) ?? loadPlan(body.planId);
     if (!plan) {
       res.status(404).json({ error: "not_found", message: `No plan found for id '${body.planId}'.` });
       return;
@@ -63,6 +67,7 @@ bindRouter.post("/execute", async (req, res) => {
 
     const execution = await executePlan(plan);
     executions.set(execution.executionId, execution);
+    saveExecution(execution);
 
     res.json(execution);
   } catch (e) {
@@ -71,7 +76,7 @@ bindRouter.post("/execute", async (req, res) => {
 });
 
 bindRouter.get("/status/:executionId", (req, res) => {
-  const execution = executions.get(req.params.executionId);
+  const execution = executions.get(req.params.executionId) ?? loadExecution(req.params.executionId);
   if (!execution) {
     res.status(404).json({ error: "not_found", message: `No execution found for id '${req.params.executionId}'.` });
     return;
@@ -83,7 +88,6 @@ bindRouter.get("/status/:executionId", (req, res) => {
 bindRouter.get("/search", async (req, res) => {
   try {
     const query = typeof req.query.q === "string" ? req.query.q : "A2MCP";
-    const { findMatchingAgents } = await import("./marketplace.js");
     const agents = await findMatchingAgents(query);
     res.json({
       count: agents.length,
@@ -99,77 +103,5 @@ bindRouter.get("/search", async (req, res) => {
     });
   } catch (e) {
     res.status(422).json({ error: "search_failed", message: (e as Error).message });
-  }
-});
-
-// Test x402 flow directly
-bindRouter.get("/test-agent", async (_req, res) => {
-  try {
-    const { execSync } = await import("node:child_process");
-    const ONCHAINOS_PATH = process.env.HOME + "/.local/bin/onchainos";
-    const results: string[] = [];
-
-    // Login
-    try {
-      execSync(`${ONCHAINOS_PATH} wallet login`, { timeout: 10000 });
-      results.push("1. Login OK");
-    } catch { results.push("1. Login FAILED"); }
-
-    // Call Chain Info endpoint with correct params
-    let challenge = "";
-    try {
-      const resp = execSync(
-        `curl -s --max-time 10 "https://www.oklink.com/api/v5/explorer/mcp/x402/get_chain_info" -H "Content-Type: application/json" -d '{"chainIndex":"196"}'`,
-        { timeout: 15000, encoding: "utf8" }
-      );
-      challenge = resp;
-      results.push("2. Call OK — got 402 challenge");
-    } catch (e: any) {
-      results.push(`2. Call FAILED: ${e.message}`);
-    }
-
-    // Sign payment
-    let authHeader = "";
-    if (challenge) {
-      try {
-        const payload = Buffer.from(challenge).toString("base64");
-        const signed = execSync(
-          `${ONCHAINOS_PATH} payment pay --payload '${payload}'`,
-          { timeout: 30000, encoding: "utf8" }
-        );
-        authHeader = JSON.parse(signed).data.authorization_header;
-        results.push("3. Payment signed OK");
-      } catch (e: any) {
-        results.push(`3. Payment FAILED: ${e.message}`);
-      }
-    }
-
-    // Replay with Authorization: X402
-    if (authHeader) {
-      try {
-        const paid = execSync(
-          `curl -s --max-time 10 "https://www.oklink.com/api/v5/explorer/mcp/x402/get_chain_info" -H "Content-Type: application/json" -H "Authorization: X402 ${authHeader}" -d '{"chainIndex":"196"}'`,
-          { timeout: 15000, encoding: "utf8" }
-        );
-        results.push(`4. X402 header result: ${paid.slice(0, 100)}`);
-      } catch (e: any) {
-        results.push(`4. X402 header FAILED: ${e.message}`);
-      }
-
-      // Replay with PAYMENT-SIGNATURE
-      try {
-        const paid = execSync(
-          `curl -s --max-time 10 "https://www.oklink.com/api/v5/explorer/mcp/x402/get_chain_info" -H "Content-Type: application/json" -H "PAYMENT-SIGNATURE: ${authHeader}" -d '{"chainIndex":"196"}'`,
-          { timeout: 15000, encoding: "utf8" }
-        );
-        results.push(`5. PAYMENT-SIGNATURE result: ${paid.slice(0, 100)}`);
-      } catch (e: any) {
-        results.push(`5. PAYMENT-SIGNATURE FAILED: ${e.message}`);
-      }
-    }
-
-    res.json({ ok: true, results });
-  } catch (e) {
-    res.json({ ok: false, error: (e as Error).message });
   }
 });

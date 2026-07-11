@@ -1,30 +1,66 @@
-// Bind execution engine — direct agent calls with known-good params
+// Bind execution engine — pays marketplace agents via x402, verifies each output,
+// anchors an on-chain receipt.
+//
+// Security: all HTTP is done with fetch and all CLI calls with execFile + an argument
+// array. Nothing from the marketplace (endpoint URLs) or the user (goal) is ever
+// interpolated into a shell string — there is no shell. This closes the command-
+// injection surface that existed when calls were built as `execSync(\`curl '${url}'\`)`.
 import { randomUUID } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { BindExecution, BindPlan, ExecutionResult } from "./types.js";
+import { verifyStepOutput } from "./verify.js";
+import { anchorExecution } from "./receipt.js";
 
-const ONCHAINOS_PATH = process.env.HOME + "/.local/bin/onchainos";
+const execFileAsync = promisify(execFile);
+const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
 
-function login(): boolean {
+interface HttpResult { status: number; body: string; headers: Headers; }
+
+async function httpCall(method: "GET" | "POST", url: string, body: Record<string, unknown> | null, headers: Record<string, string> = {}): Promise<HttpResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    execSync(`${ONCHAINOS_PATH} wallet login`, { timeout: 10000, encoding: "utf8" });
-    return true;
-  } catch { return false; }
+    const res = await fetch(url, {
+      method,
+      headers: { "content-type": "application/json", ...headers },
+      body: method === "POST" && body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    return { status: res.status, body: await res.text(), headers: res.headers };
+  } catch (e) {
+    return { status: 0, body: (e as Error).message, headers: new Headers() };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-function httpCall(method: string, url: string, bodyStr: string | null, auth?: string, fmt?: "x402" | "payment"): { status: number; body: string; headers: Record<string, string> } {
-  const header = auth ? (fmt === "x402" ? `-H 'Authorization: X402 ${auth}'` : `-H 'PAYMENT-SIGNATURE: ${auth}'`) : "";
-  const bodyFlag = bodyStr ? `-d '${bodyStr.replace(/'/g, "'\\''")}'` : "";
-  const result = execSync(
-    `curl -sD - --max-time 15 -X ${method} '${url}' -H 'Content-Type: application/json' ${header} ${bodyFlag}`,
-    { timeout: 20000, encoding: "utf8" }
-  );
-  const headerEnd = result.indexOf("\r\n\r\n");
-  const h = result.slice(0, headerEnd).split("\r\n");
-  const status = parseInt(h[0].split(" ")[1], 10);
-  const headers: Record<string, string> = {};
-  for (const l of h.slice(1)) { const c = l.indexOf(":"); if (c > 0) headers[l.slice(0, c).trim().toLowerCase()] = l.slice(c + 1).trim(); }
-  return { status, body: result.slice(headerEnd + 4).trim(), headers };
+async function walletLogin(): Promise<void> {
+  // Best-effort: a live session may already exist, in which case a re-login errors
+  // harmlessly. Real auth failures surface later as a failed payment sign.
+  try { await execFileAsync(ONCHAINOS_PATH, ["wallet", "login"], { timeout: 20000 }); } catch { /* ignore */ }
+}
+
+async function signPayment(challengeB64: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(ONCHAINOS_PATH, ["payment", "pay", "--payload", challengeB64], { timeout: 30000 });
+    return JSON.parse(stdout).data?.authorization_header ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// The paid response carries a base64 `payment-response` header: {success, transaction}.
+// Extract the real on-chain settlement tx hash so the receipt tells the truth.
+function extractSettlementTx(headers: Headers): string | undefined {
+  const pr = headers.get("payment-response");
+  if (!pr) return undefined;
+  try {
+    const decoded = JSON.parse(Buffer.from(pr, "base64").toString());
+    return typeof decoded?.transaction === "string" ? decoded.transaction : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function getParams(endpoint: string, goal: string): { body: Record<string, unknown>; method: "POST" | "GET" } {
@@ -67,11 +103,46 @@ function getParams(endpoint: string, goal: string): { body: Record<string, unkno
   return { body: { q: goal }, method: "POST" };
 }
 
+// Runs a single step: call the agent, pay if it returns 402, capture the real
+// settlement tx hash. Returns the raw output (or null) plus payment metadata.
+async function callAgent(endpoint: string, goal: string): Promise<{ output: unknown | null; paid: boolean; txHash?: string; error?: string }> {
+  const { body, method } = getParams(endpoint, goal);
+
+  let res = await httpCall(method, endpoint, body);
+  if (res.status === 405 && method === "POST") res = await httpCall("GET", endpoint, null);
+
+  if (res.status === 200) {
+    return { output: safeJson(res.body), paid: false };
+  }
+  if (res.status !== 402) {
+    return { output: null, paid: false, error: `HTTP ${res.status}: ${res.body.slice(0, 80)}` };
+  }
+
+  // 402 — sign and replay. Prefer the raw PAYMENT-REQUIRED header value (already the
+  // exact base64 the signer expects); fall back to base64 of the challenge body.
+  const challengeB64 = res.headers.get("payment-required") ?? Buffer.from(res.body).toString("base64");
+  const auth = await signPayment(challengeB64);
+  if (!auth) return { output: null, paid: false, error: "payment signing failed" };
+
+  let paid = await httpCall("POST", endpoint, body, { "PAYMENT-SIGNATURE": auth });
+  if (paid.status !== 200) paid = await httpCall("POST", endpoint, body, { "Authorization": `X402 ${auth}` });
+
+  if (paid.status === 200) {
+    return { output: safeJson(paid.body), paid: true, txHash: extractSettlementTx(paid.headers) };
+  }
+  return { output: null, paid: false, error: `paid call returned ${paid.status}: ${paid.body.slice(0, 80)}` };
+}
+
+function safeJson(text: string): unknown {
+  try { return JSON.parse(text || "{}"); } catch { return text; }
+}
+
 export async function executePlan(plan: BindPlan): Promise<BindExecution> {
-  login();
+  await walletLogin();
   const executionId = randomUUID();
   const stepResults: ExecutionResult[] = [];
   const outputs: string[] = [];
+  let totalPaid = 0;
 
   for (const step of plan.steps) {
     const result: ExecutionResult = {
@@ -80,82 +151,57 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     };
 
     try {
-      const { body, method } = getParams(step.agent.endpoint, plan.goal);
-      const bodyStr = method === "POST" ? JSON.stringify(body) : null;
-      result.input = body;
+      const call = await callAgent(step.agent.endpoint, plan.goal);
+      result.input = getParams(step.agent.endpoint, plan.goal).body;
 
-      let initial = httpCall(method, step.agent.endpoint, bodyStr);
-      if (initial.status === 405 && method === "POST") {
-        initial = httpCall("GET", step.agent.endpoint, null);
-      }
-
-      if (initial.status === 200) {
-        result.output = JSON.parse(initial.body || "{}");
-        result.status = "passed";
-        result.paymentTxHash = "no_payment_needed";
-      } else if (initial.status === 402) {
-        let challenge = JSON.parse(initial.body || "{}");
-        if (!challenge.accepts) {
-          const pr = initial.headers["payment-required"];
-          if (pr) {
-            try { challenge = JSON.parse(Buffer.from(pr, "base64").toString()); } catch {}
-          }
-        }
-        if (challenge?.accepts?.[0]) {
-          const payload = Buffer.from(JSON.stringify(challenge)).toString("base64");
-          try {
-            const signed = execSync(`${ONCHAINOS_PATH} payment pay --payload '${payload}'`, { timeout: 30000, encoding: "utf8" });
-            const auth = JSON.parse(signed).data?.authorization_header;
-            if (auth) {
-              // Try PAYMENT-SIGNATURE first, then Authorization: X402
-              let paid = httpCall("POST", step.agent.endpoint, bodyStr, auth, "payment");
-              if (paid.status !== 200) paid = httpCall("POST", step.agent.endpoint, bodyStr, auth, "x402");
-              if (paid.status === 200) {
-                result.output = JSON.parse(paid.body || "{}");
-                result.status = "passed";
-                result.paymentTxHash = "paid_via_x402";
-              } else {
-                result.status = "errored";
-                result.error = `Paid call returned ${paid.status}: ${paid.body.slice(0, 60)}`;
-              }
-            } else {
-              result.status = "errored";
-              result.error = "Payment signed but no auth header";
-            }
-          } catch (e: any) {
-            result.status = "errored";
-            result.error = `Payment signing failed: ${e.message}`;
-          }
-        } else {
-          result.status = "errored";
-          result.error = "Invalid x402 challenge";
-        }
-      } else {
+      if (call.output === null) {
         result.status = "errored";
-        result.error = `HTTP ${initial.status}`;
-      }
+        result.error = call.error ?? "no output";
+      } else {
+        result.output = call.output;
+        if (call.paid) {
+          result.paymentTxHash = call.txHash ?? "settled";
+          totalPaid += step.agent.feeAmount;
+        } else {
+          result.paymentTxHash = "no_payment_needed";
+        }
 
-      if (result.status === "passed" && result.output) {
-        outputs.push(`[${step.agent.name}]\n${JSON.stringify(result.output, null, 2)}`);
+        // Verify the output before it counts toward the deliverable. A failing
+        // step does not get merged and (Sev #2/#4) can fall back to another agent.
+        const verdict = verifyStepOutput(step, call.output);
+        result.verificationResult = { passed: verdict.passed, detail: verdict.detail };
+        result.status = verdict.passed ? "passed" : "failed";
+
+        if (verdict.passed) {
+          outputs.push(`[${step.agent.name}]\n${JSON.stringify(call.output, null, 2)}`);
+        }
       }
-    } catch (e: any) {
+    } catch (e) {
       result.status = "errored";
-      result.error = e.message || String(e);
+      result.error = (e as Error).message;
     }
 
     result.completedAt = new Date().toISOString();
     stepResults.push(result);
   }
 
-  const completed = stepResults.filter(r => r.status === "passed").length;
-  const totalPaid = stepResults.reduce((s, r) => s + (r.status === "passed" && r.paymentTxHash === "paid_via_x402" ? 1 : 0), 0) * 0.001;
+  const completed = stepResults.filter((r) => r.status === "passed").length;
+  const finalOutput = outputs.join("\n\n---\n\n") || "No agent outputs passed verification.";
 
-  return {
+  const execution: BindExecution = {
     executionId, planId: plan.planId, goal: plan.goal,
     status: completed === stepResults.length ? "completed" : completed > 0 ? "partial" : "failed",
-    stepResults,
-    finalOutput: outputs.join("\n\n---\n\n") || "No agent outputs retrieved.",
+    stepResults, finalOutput,
     totalPaid, totalSteps: stepResults.length, completedSteps: completed,
     createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
   };
+
+  // Anchor a signed receipt of the whole execution on X Layer (real tx).
+  const anchor = await anchorExecution(execution);
+  if (anchor) {
+    execution.anchorTxHash = anchor.txHash;
+    execution.finalReportUrl = anchor.reportUrl;
+  }
+
+  return execution;
 }

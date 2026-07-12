@@ -2,15 +2,34 @@
 // Uses live marketplace search — no hardcoded agent catalog
 
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { BindPlan, BindStep, PlanRequest } from "./types.js";
 import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceService } from "./marketplace.js";
 
 // Guardrails so an auto-plan is never surprising or nonsensical.
 const PER_STEP_FEE_CEILING = 0.60; // never silently add a pricey agent (e.g. a $3.30 token launcher)
 const MAX_TOTAL_USDT = 1.5;        // cap the whole quote
-// Agents the executor has verified parameter mappings for — strongly preferred so
-// plans actually execute rather than erroring on wrong params.
-const EXECUTABLE_AGENT_IDS = new Set(["2023", "2135", "2013", "2012"]);
+
+// Tested-payable agents. A live probe (scripts/probe-payability.mjs) signs a real x402
+// payment against each marketplace agent and records which ones actually SETTLE — most
+// third-party sellers reject even a correctly-signed payment. We bias hard to the ones
+// that pay out so plans execute for real instead of erroring on the payment step.
+// Loaded from data/payable-agents.json (re-runnable) with a proven fallback baked in.
+const FALLBACK_PAYABLE = ["2023", "4215", "3209", "4413", "3887", "3417"];
+function loadPayableIds(): Set<string> {
+  try {
+    const dir = process.env.BIND_DATA_DIR ?? "data";
+    const raw = JSON.parse(readFileSync(join(dir, "payable-agents.json"), "utf8"));
+    const ids = Array.isArray(raw.payableIds) ? raw.payableIds.map(String) : [];
+    // #2023 (OKX-official Onchain Data Explorer) settles on its main services even when
+    // the probe's cheapest sub-endpoint doesn't — always keep it in the trusted set.
+    return new Set<string>([...ids, "2023", ...FALLBACK_PAYABLE]);
+  } catch {
+    return new Set<string>(FALLBACK_PAYABLE);
+  }
+}
+const PAYABLE_AGENT_IDS = loadPayableIds();
 
 // An analytical goal ("is this safe", "research X", "sentiment on Y") must never
 // select an agent whose job is to take an action (launch/mint/swap/deploy).
@@ -65,11 +84,12 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     return true;
   });
 
-  // Rank: agents the executor can call correctly first, then by relevance score.
+  // Rank: agents that actually settle payments first, then by relevance score. This is
+  // what makes a plan execute for real — an unpayable agent just errors on the pay step.
   eligible.sort((a, b) => {
-    const aExec = EXECUTABLE_AGENT_IDS.has(a.agent.agentId) ? 1 : 0;
-    const bExec = EXECUTABLE_AGENT_IDS.has(b.agent.agentId) ? 1 : 0;
-    if (aExec !== bExec) return bExec - aExec;
+    const aPay = PAYABLE_AGENT_IDS.has(a.agent.agentId) ? 1 : 0;
+    const bPay = PAYABLE_AGENT_IDS.has(b.agent.agentId) ? 1 : 0;
+    if (aPay !== bPay) return bPay - aPay;
     return b.score - a.score;
   });
 
@@ -83,8 +103,10 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     const fee = cheapestService(agent).feeAmount;
     if (runningTotal + fee > MAX_TOTAL_USDT) continue;
     const role = determineAgentRole(agent, req.goal);
-    // Prefer new roles for diversity; still allow same-role until we have 2 steps.
-    if (usedRoles.has(role) && selectedAgents.length >= 2) continue;
+    // Prefer new roles for diversity — but never skip a tested-payable agent for it.
+    // A payable same-role agent beats an unpayable diverse one that would just error.
+    const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
+    if (!payable && usedRoles.has(role) && selectedAgents.length >= 2) continue;
     selectedAgents.push(agent);
     usedRoles.add(role);
     runningTotal += fee;

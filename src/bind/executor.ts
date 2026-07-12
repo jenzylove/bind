@@ -8,12 +8,47 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { BindExecution, BindPlan, ExecutionResult } from "./types.js";
+import type { BindExecution, BindPlan, BindStep, ExecutionResult } from "./types.js";
 import { verifyStepOutput } from "./verify.js";
 import { anchorExecution } from "./receipt.js";
+import { inferParams } from "./agent-infer.js";
+import { synthesizeDeliverable, type AgentOutput } from "./synthesize.js";
 
 const execFileAsync = promisify(execFile);
 const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
+const USDT_ADDRESS = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
+
+// Thrown before any payment when the agentic wallet cannot cover the plan. The route
+// turns this into a 402 with a "fund your wallet" message. This closes the bug where an
+// empty wallet still "executed" the order: signing an x402 authorization does NOT check
+// balance, so without this guard a broke wallet sails through and settlement silently fails.
+export class InsufficientBalanceError extends Error {
+  constructor(public have: number, public need: number) {
+    super(`INSUFFICIENT_BALANCE: wallet holds ${have} USDT but this plan needs ${need} USDT`);
+    this.name = "InsufficientBalanceError";
+  }
+}
+
+// Reads the agentic wallet's USDT balance on X Layer. Returns null if it can't be read
+// (in which case we do NOT block execution — we only block on a *confirmed* shortfall).
+async function getUsdtBalance(): Promise<number | null> {
+  try {
+    const { stdout } = await execFileAsync(ONCHAINOS_PATH, ["wallet", "balance"], { timeout: 20000 });
+    const parsed = JSON.parse(stdout);
+    const details = parsed?.data?.details ?? [];
+    for (const d of details) {
+      for (const t of d.tokenAssets ?? []) {
+        if (String(t.tokenAddress).toLowerCase() === USDT_ADDRESS) {
+          const bal = parseFloat(t.balance);
+          if (!Number.isNaN(bal)) return bal;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 interface HttpResult { status: number; body: string; headers: Headers; }
 
@@ -50,20 +85,11 @@ async function signPayment(challengeB64: string): Promise<string | null> {
   }
 }
 
-// The paid response carries a base64 `payment-response` header: {success, transaction}.
-// Extract the real on-chain settlement tx hash so the receipt tells the truth.
-function extractSettlementTx(headers: Headers): string | undefined {
-  const pr = headers.get("payment-response");
-  if (!pr) return undefined;
-  try {
-    const decoded = JSON.parse(Buffer.from(pr, "base64").toString());
-    return typeof decoded?.transaction === "string" ? decoded.transaction : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
-function getParams(endpoint: string, goal: string): { body: Record<string, unknown>; method: "POST" | "GET" } {
+// Hardcoded, proven parameter mappings for the four agents Bind has tested end-to-end.
+// Returns null when the endpoint is unknown — the caller then asks inferParams to read
+// the service description and build params for that agent (Option D: works with ANY agent).
+function getParams(endpoint: string, goal: string): { body: Record<string, unknown>; method: "POST" | "GET" } | null {
   const e = endpoint;
   const hasAddr = goal.includes("0x");
   // Onchain Data Explorer (Agent 2023) — OKX Official
@@ -99,38 +125,63 @@ function getParams(endpoint: string, goal: string): { body: Record<string, unkno
   if (e.includes("barker_yield_advisor")) return { body: { limit: 5 }, method: "POST" };
   if (e.includes("barker_pool_search")) return { body: { q: goal }, method: "POST" };
   if (e.includes("barker_pool_detail") || e.includes("barker_pool_history")) return { body: { poolUid: "" }, method: "POST" };
-  // Generic fallback
-  return { body: { q: goal }, method: "POST" };
+  // Unknown endpoint — let inferParams read the service description instead.
+  return null;
 }
 
-// Runs a single step: call the agent, pay if it returns 402, capture the real
-// settlement tx hash. Returns the raw output (or null) plus payment metadata.
-async function callAgent(endpoint: string, goal: string): Promise<{ output: unknown | null; paid: boolean; txHash?: string; error?: string }> {
-  const { body, method } = getParams(endpoint, goal);
+// Decodes the payment-response header into {settled, txHash}. A seller echoes
+// {success, transaction} here after settling on-chain. We only count a step as truly
+// paid when success === true; a 200 with success:false means the seller returned data
+// but settlement did not actually happen (e.g. our authorization was worthless).
+function readSettlement(headers: Headers): { settled: boolean; txHash?: string } | null {
+  const pr = headers.get("payment-response");
+  if (!pr) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(pr, "base64").toString());
+    return { settled: decoded?.success === true, txHash: typeof decoded?.transaction === "string" ? decoded.transaction : undefined };
+  } catch {
+    return null;
+  }
+}
+
+interface CallResult { output: unknown | null; paid: boolean; txHash?: string; error?: string; input: Record<string, unknown>; }
+
+// Runs a single step: pick params (proven map, else infer from the service description),
+// call the agent, pay if it returns 402, and verify the payment actually settled.
+async function callAgent(step: BindStep, goal: string): Promise<CallResult> {
+  const endpoint = step.agent.endpoint;
+  const known = getParams(endpoint, goal);
+  const { body, method } = known ?? await inferParams(step.agent.serviceName, step.agentServiceDescription ?? "", endpoint, goal);
 
   let res = await httpCall(method, endpoint, body);
   if (res.status === 405 && method === "POST") res = await httpCall("GET", endpoint, null);
 
   if (res.status === 200) {
-    return { output: safeJson(res.body), paid: false };
+    return { output: safeJson(res.body), paid: false, input: body };
   }
   if (res.status !== 402) {
-    return { output: null, paid: false, error: `HTTP ${res.status}: ${res.body.slice(0, 80)}` };
+    return { output: null, paid: false, error: `HTTP ${res.status}: ${res.body.slice(0, 80)}`, input: body };
   }
 
   // 402 — sign and replay. Prefer the raw PAYMENT-REQUIRED header value (already the
   // exact base64 the signer expects); fall back to base64 of the challenge body.
   const challengeB64 = res.headers.get("payment-required") ?? Buffer.from(res.body).toString("base64");
   const auth = await signPayment(challengeB64);
-  if (!auth) return { output: null, paid: false, error: "payment signing failed" };
+  if (!auth) return { output: null, paid: false, error: "payment signing failed", input: body };
 
   let paid = await httpCall("POST", endpoint, body, { "PAYMENT-SIGNATURE": auth });
   if (paid.status !== 200) paid = await httpCall("POST", endpoint, body, { "Authorization": `X402 ${auth}` });
 
-  if (paid.status === 200) {
-    return { output: safeJson(paid.body), paid: true, txHash: extractSettlementTx(paid.headers) };
+  if (paid.status !== 200) {
+    return { output: null, paid: false, error: `paid call returned ${paid.status}: ${paid.body.slice(0, 80)}`, input: body };
   }
-  return { output: null, paid: false, error: `paid call returned ${paid.status}: ${paid.body.slice(0, 80)}` };
+
+  // Got data. Confirm the payment settled on-chain before calling it "paid".
+  const settlement = readSettlement(paid.headers);
+  if (settlement && !settlement.settled) {
+    return { output: null, paid: false, error: "payment did not settle on-chain (success=false)", input: body };
+  }
+  return { output: safeJson(paid.body), paid: true, txHash: settlement?.txHash, input: body };
 }
 
 function safeJson(text: string): unknown {
@@ -139,9 +190,17 @@ function safeJson(text: string): unknown {
 
 export async function executePlan(plan: BindPlan): Promise<BindExecution> {
   await walletLogin();
+
+  // Guard: never start paying agents unless the wallet can cover the whole plan. This
+  // is what was missing before — an empty wallet used to "execute" and silently fail.
+  const balance = await getUsdtBalance();
+  if (balance !== null && balance < plan.totalPriceUsdt) {
+    throw new InsufficientBalanceError(balance, plan.totalPriceUsdt);
+  }
+
   const executionId = randomUUID();
   const stepResults: ExecutionResult[] = [];
-  const outputs: string[] = [];
+  const passedOutputs: AgentOutput[] = [];
   let totalPaid = 0;
 
   for (const step of plan.steps) {
@@ -151,8 +210,8 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     };
 
     try {
-      const call = await callAgent(step.agent.endpoint, plan.goal);
-      result.input = getParams(step.agent.endpoint, plan.goal).body;
+      const call = await callAgent(step, plan.goal);
+      result.input = call.input;
 
       if (call.output === null) {
         result.status = "errored";
@@ -167,13 +226,13 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
         }
 
         // Verify the output before it counts toward the deliverable. A failing
-        // step does not get merged and (Sev #2/#4) can fall back to another agent.
+        // step does not get merged into the synthesized result.
         const verdict = verifyStepOutput(step, call.output);
         result.verificationResult = { passed: verdict.passed, detail: verdict.detail };
         result.status = verdict.passed ? "passed" : "failed";
 
         if (verdict.passed) {
-          outputs.push(`[${step.agent.name}]\n${JSON.stringify(call.output, null, 2)}`);
+          passedOutputs.push({ agent: step.agent.name, role: step.agent.category, output: call.output });
         }
       }
     } catch (e) {
@@ -186,7 +245,8 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
   }
 
   const completed = stepResults.filter((r) => r.status === "passed").length;
-  const finalOutput = outputs.join("\n\n---\n\n") || "No agent outputs passed verification.";
+  // The deliverable: one readable answer synthesized from the verified agent outputs.
+  const finalOutput = await synthesizeDeliverable(plan.goal, passedOutputs);
 
   const execution: BindExecution = {
     executionId, planId: plan.planId, goal: plan.goal,

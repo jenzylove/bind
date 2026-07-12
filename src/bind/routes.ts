@@ -2,7 +2,7 @@
 import { Router } from "express";
 import type { PlanRequest } from "./types.js";
 import { createPlan } from "./planner.js";
-import { executePlan } from "./executor.js";
+import { executePlan, InsufficientBalanceError } from "./executor.js";
 import { savePlan, loadPlan, saveExecution, loadExecution } from "./store.js";
 import { findMatchingAgents } from "./marketplace.js";
 
@@ -71,6 +71,16 @@ bindRouter.post("/execute", async (req, res) => {
 
     res.json(execution);
   } catch (e) {
+    // The wallet can't cover the plan — decline BEFORE any payment, with a clear reason.
+    if (e instanceof InsufficientBalanceError) {
+      res.status(402).json({
+        error: "insufficient_balance",
+        message: `Your agentic wallet holds ${e.have} USDT but this plan costs ${e.need} USDT. Fund the wallet on X Layer and try again.`,
+        have: e.have,
+        need: e.need,
+      });
+      return;
+    }
     res.status(422).json({ error: "execution_failed", message: (e as Error).message });
   }
 });

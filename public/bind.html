@@ -266,9 +266,18 @@
         <div class="result-status" id="resultStatus">completed</div>
       </div>
 
+      <!-- The deliverable: one readable answer synthesized from the verified agents -->
+      <div id="deliverableBlock" style="margin:14px 0;padding:16px;background:#0d0d12;border:1px solid #2a2a35;border-radius:12px;">
+        <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#7c7cff;margin-bottom:8px;font-weight:600;">Your Deliverable</div>
+        <div id="deliverable" style="font-size:14px;line-height:1.6;color:#e8e8ef;white-space:pre-wrap;">Waiting for execution...</div>
+      </div>
+
       <div id="resultSteps"></div>
 
-      <div class="result-output" id="resultOutput">Waiting for execution...</div>
+      <details style="margin-top:12px;">
+        <summary style="cursor:pointer;font-size:12px;color:#666;">Raw execution data &amp; per-agent outputs</summary>
+        <div class="result-output" id="resultOutput" style="margin-top:8px;"></div>
+      </details>
 
       <div class="receipt" id="receipt">
         <div style="font-weight:600;margin-bottom:8px;color:#fff;">⊞ Receipt</div>
@@ -429,9 +438,12 @@ async function executePlan() {
       `;
     });
 
-    // Show output
-    const output = JSON.stringify(data, null, 2);
-    document.getElementById('resultOutput').textContent = output;
+    // The deliverable — the synthesized answer is the product, shown front and center.
+    document.getElementById('deliverable').textContent =
+      data.finalOutput || 'No deliverable was produced.';
+
+    // Raw data stays available but tucked away.
+    document.getElementById('resultOutput').textContent = JSON.stringify(data, null, 2);
 
     // Receipt
     document.getElementById('receiptId').textContent = data.executionId;

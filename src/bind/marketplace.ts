@@ -84,6 +84,10 @@ function fetchAllA2McpAgents(): MarketplaceAgent[] {
             serviceType: s.serviceType,
             feeAmount: parseFloat(s.feeAmount) || 0,
             endpoint: s.endpoint || "",
+            // The service description carries the input-requirements doc ("Input
+            // requirements: ...") — the executor feeds this to inferParams so it can
+            // call ANY agent correctly, not just the four it has hardcoded mappings for.
+            description: s.serviceDescription || "",
           })),
         });
       }

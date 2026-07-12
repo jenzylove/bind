@@ -24,7 +24,7 @@ export async function inferParams(
   try {
     const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
     const resp = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 500,
       system: "You are an API integration assistant. You read service descriptions of OKX marketplace agents and determine the correct HTTP method and JSON parameters to call them with, given a user's goal. Respond ONLY with valid JSON: {\"method\": \"POST\" or \"GET\", \"body\": {...}}. Use empty object for GET requests. Use the example parameters in the description as a template. If the description says 'no required fields', send empty body on POST.",
       messages: [{

@@ -189,7 +189,7 @@
     <nav class="top-nav">
       <a href="#how">How it works</a>
       <a href="#use-cases">Use cases</a>
-      <a href="#top" class="nav-cta">Launch app</a>
+      <button id="walletBtn" class="nav-cta" onclick="connectWallet()" style="cursor:pointer;background:none;font-family:inherit">Connect wallet</button>
     </nav>
   </header>
 
@@ -327,10 +327,77 @@
 
 <script>
 const EXPLORER = 'https://www.oklink.com/xlayer/tx/';
+const XLAYER_HEX = '0xc4'; // 196
 let currentPlan = null;
 let currentExecution = null;
 let animTimer = null;
 let logs = [];
+let wallet = { address: null, cfg: null };
+
+async function loadCfg() {
+  if (wallet.cfg) return wallet.cfg;
+  try { wallet.cfg = await (await fetch('/bind/config')).json(); } catch (e) { wallet.cfg = { requiresPayment: true }; }
+  return wallet.cfg;
+}
+
+function setWalletBtn() {
+  const b = document.getElementById('walletBtn');
+  if (!b) return;
+  b.textContent = wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : 'Connect wallet';
+}
+
+async function connectWallet() {
+  if (!window.ethereum) { toast('No wallet found — install MetaMask to pay and run missions'); return null; }
+  try {
+    const accts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    wallet.address = accts && accts[0];
+    setWalletBtn();
+    return wallet.address;
+  } catch (e) { toast('Wallet connection cancelled'); return null; }
+}
+
+async function ensureXLayer() {
+  const id = await window.ethereum.request({ method: 'eth_chainId' });
+  if (id === XLAYER_HEX) return;
+  try {
+    await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: XLAYER_HEX }] });
+  } catch (e) {
+    await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{
+      chainId: XLAYER_HEX, chainName: 'X Layer',
+      rpcUrls: ['https://rpc.xlayer.tech'],
+      nativeCurrency: { name: 'OKB', symbol: 'OKB', decimals: 18 },
+      blockExplorerUrls: ['https://www.oklink.com/xlayer'],
+    }] });
+  }
+}
+
+// Sends the plan's quoted USDT total to Bind's wallet, returns the tx hash once mined.
+async function payForPlan(cfg) {
+  await ensureXLayer();
+  const amount = BigInt(Math.round(currentPlan.totalPriceUsdt * 1e6));
+  const to = cfg.payTo.slice(2).padStart(64, '0');
+  const amt = amount.toString(16).padStart(64, '0');
+  const data = '0xa9059cbb' + to + amt;
+  addLog(`Requesting $${currentPlan.totalPriceUsdt.toFixed(3)} USDT payment approval…`, 'info');
+  const txHash = await window.ethereum.request({ method: 'eth_sendTransaction', params: [{
+    from: wallet.address, to: cfg.usdtAsset, data,
+  }] });
+  addLog(`Payment sent: ${txHash.slice(0,10)}…`, 'paid');
+  addLog('Waiting for on-chain confirmation…', 'info');
+  await waitForReceipt(txHash);
+  addLog('Payment confirmed on X Layer', 'verified');
+  return txHash;
+}
+
+async function waitForReceipt(txHash) {
+  for (let i = 0; i < 40; i++) {
+    try {
+      const r = await window.ethereum.request({ method: 'eth_getTransactionReceipt', params: [txHash] });
+      if (r && r.blockNumber) return;
+    } catch (e) {}
+    await sleep(1500);
+  }
+}
 
 function fillGoal(t) { document.getElementById('goal').value = t; window.scrollTo({top:0,behavior:'smooth'}); }
 function showError(m) { const e = document.getElementById('errorMsg'); e.textContent = m; e.classList.add('visible'); }
@@ -397,9 +464,13 @@ async function createPlan() {
         </div>`;
     });
     document.getElementById('consoleEyebrow').textContent = 'Mission plan';
-    document.getElementById('execBtn').style.display = 'block';
-    document.getElementById('execBtn').disabled = false;
-    document.getElementById('execBtn').textContent = 'Execute mission →';
+    const cfg = await loadCfg();
+    const eb = document.getElementById('execBtn');
+    eb.style.display = 'block';
+    eb.disabled = false;
+    eb.textContent = (cfg.requiresPayment && data.plan.totalPriceUsdt > 0)
+      ? `Pay $${data.plan.totalPriceUsdt.toFixed(3)} & execute →`
+      : 'Execute mission →';
     document.getElementById('consoleSection').classList.add('visible');
     document.getElementById('consoleSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) { addLog('Failed to reach marketplace.', 'error'); showError(`Connection error: ${e.message}`); }
@@ -410,20 +481,42 @@ async function executePlan() {
   if (!currentPlan) return;
   hideError();
   const btn = document.getElementById('execBtn');
+  const cfg = await loadCfg();
+
+  // Buyer-pays flow: connect wallet and pay the quote on-chain before executing.
+  let paymentTxHash = null;
+  if (cfg.requiresPayment && currentPlan.totalPriceUsdt > 0) {
+    if (!wallet.address) {
+      const a = await connectWallet();
+      if (!a) { showError('Connect a wallet to pay for and run this mission.'); return; }
+    }
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Awaiting payment…';
+    try {
+      paymentTxHash = await payForPlan(cfg);
+    } catch (e) {
+      addLog(`Payment failed: ${e.message || 'rejected'}`, 'error');
+      showError(`Payment failed or was rejected: ${e.message || ''}`);
+      btn.disabled = false; btn.innerHTML = 'Execute mission →';
+      return;
+    }
+  }
+
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Executing…';
   document.getElementById('consoleEyebrow').textContent = 'Executing';
-
   const rows = [...document.querySelectorAll('.step-row')];
   for (const r of rows) r.classList.add('running');
 
   try {
     for (const step of currentPlan.steps) { addLog(`Calling ${step.agent.name}...`, 'info'); }
-    const res = await fetch('/bind/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ planId: currentPlan.planId }) });
+    const res = await fetch('/bind/execute', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planId: currentPlan.planId, paymentTxHash }),
+    });
     const data = await res.json();
-    if (!res.ok) { addLog(`Execution failed: ${data.message || ''}`, 'error'); showError(data.message || 'Execution failed'); return; }
+    if (!res.ok) { addLog(`Execution failed: ${data.message || ''}`, 'error'); showError(data.message || 'Execution failed'); btn.disabled = false; btn.innerHTML = 'Execute mission →'; return; }
     renderExecution(data, rows);
-  } catch (e) { addLog('Execution error.', 'error'); showError(`Execution error: ${e.message}`); }
-  finally { btn.textContent = '✓ Executed'; }
+  } catch (e) { addLog('Execution error.', 'error'); showError(`Execution error: ${e.message}`); btn.disabled = false; btn.innerHTML = 'Execute mission →'; }
+  finally { if (currentExecution) btn.textContent = '✓ Executed'; }
 }
 
 async function renderExecution(data, rows) {
@@ -527,6 +620,12 @@ async function loadFromUrl() {
   } catch (e) {}
 }
 loadFromUrl();
+loadCfg();
+// Reflect an already-authorized wallet without prompting.
+if (window.ethereum) {
+  window.ethereum.request({ method: 'eth_accounts' }).then((a) => { if (a && a[0]) { wallet.address = a[0]; setWalletBtn(); } }).catch(() => {});
+  window.ethereum.on && window.ethereum.on('accountsChanged', (a) => { wallet.address = a && a[0]; setWalletBtn(); });
+}
 </script>
 </body>
 </html>

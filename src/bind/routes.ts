@@ -5,6 +5,14 @@ import { createPlan } from "./planner.js";
 import { executePlan, InsufficientBalanceError } from "./executor.js";
 import { savePlan, loadPlan, saveExecution, loadExecution } from "./store.js";
 import { findMatchingAgents } from "./marketplace.js";
+import { verifyPayment } from "./pay-verify.js";
+import { config } from "../config.js";
+
+// When set, /bind/execute runs without an on-chain payment (used for internal testing and
+// sponsored demos). Default OFF: real users must pay the quote to Bind's wallet first,
+// which the server verifies. This is what makes Bind a real economic loop and stops the
+// agentic wallet from being drained by anonymous free calls.
+const ALLOW_FREE = process.env.BIND_ALLOW_FREE === "1";
 
 export const bindRouter = Router();
 
@@ -18,6 +26,18 @@ bindRouter.get("/health", (_req, res) => {
     version: "0.1.0",
     description: "The orchestrator for the agent economy",
     status: "live",
+  });
+});
+
+// Public payment config the browser needs to build the buyer's on-chain payment.
+bindRouter.get("/config", (_req, res) => {
+  res.json({
+    payTo: config.payToAddress,
+    usdtAsset: config.usdtAsset,
+    usdtDecimals: config.usdtDecimals,
+    chainId: 196,
+    chainIdHex: "0xc4",
+    requiresPayment: !ALLOW_FREE,
   });
 });
 
@@ -63,6 +83,26 @@ bindRouter.post("/execute", async (req, res) => {
     if (!plan) {
       res.status(404).json({ error: "not_found", message: `No plan found for id '${body.planId}'.` });
       return;
+    }
+
+    // Verify the user paid the quote on-chain before we spend anything. Free plans (total
+    // 0) and the internal sponsored-demo flag skip this.
+    if (!ALLOW_FREE && plan.totalPriceUsdt > 0) {
+      const paymentTxHash = (body as { paymentTxHash?: string }).paymentTxHash;
+      if (!paymentTxHash) {
+        res.status(402).json({
+          error: "payment_required",
+          message: `Connect your wallet and pay $${plan.totalPriceUsdt.toFixed(3)} USDT to Bind on X Layer to run this mission.`,
+          payTo: "pay-to-bind",
+          amountUsdt: plan.totalPriceUsdt,
+        });
+        return;
+      }
+      const verdict = await verifyPayment(paymentTxHash, plan.totalPriceUsdt);
+      if (!verdict.ok) {
+        res.status(402).json({ error: "payment_invalid", message: `Payment could not be verified: ${verdict.reason}` });
+        return;
+      }
     }
 
     const execution = await executePlan(plan);

@@ -83,6 +83,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   // $3.30 meme-launcher on a safety question" failure mode.
   const eligible = scored.filter(({ agent }) => {
     if (agent.services.length === 0) return false;
+    if (EXCLUDE_IDS.has(agent.agentId)) return false; // settle-but-unusable (MCP/topup) — never route to these
     if (cheapestService(agent).feeAmount > PER_STEP_FEE_CEILING) return false;
     if (analytical && isActionAgent(agent)) return false;
     return true;

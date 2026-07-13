@@ -146,6 +146,27 @@ function readSettlement(headers: Headers): { settled: boolean; txHash?: string }
 
 interface CallResult { output: unknown | null; paid: boolean; txHash?: string; error?: string; input: Record<string, unknown>; }
 
+// Absolute hard ceiling per single agent call, regardless of the quote. Backstop against
+// an agent whose 402 challenge demands far more than its listed marketplace fee.
+const MAX_ABS_PER_CALL_USDT = 0.20;
+const USDT_ASSET_LC = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
+
+// Decodes a 402 challenge to the amount (in USDT) and asset it actually demands. An
+// agent's live challenge can ask for MUCH more than the marketplace-listed fee — this is
+// how a $0.11-listed agent drained $3/call. We check this BEFORE signing.
+function readChallengeCost(challengeB64: string): { usdt: number; asset: string } | null {
+  try {
+    const dec = JSON.parse(Buffer.from(challengeB64, "base64").toString());
+    const accept = (dec.accepts || dec.paymentRequirements || [])[0] || dec.accepted || {};
+    const raw = accept.amount ?? accept.maxAmountRequired;
+    if (raw == null) return null;
+    // USDT on X Layer is 6 decimals.
+    return { usdt: Number(raw) / 1e6, asset: String(accept.asset || "").toLowerCase() };
+  } catch {
+    return null;
+  }
+}
+
 // Runs a single step: pick params (proven map, else infer from the service description),
 // call the agent, pay if it returns 402, and verify the payment actually settled.
 async function callAgent(step: BindStep, goal: string): Promise<CallResult> {
@@ -166,6 +187,22 @@ async function callAgent(step: BindStep, goal: string): Promise<CallResult> {
   // 402 — sign and replay. Prefer the raw PAYMENT-REQUIRED header value (already the
   // exact base64 the signer expects); fall back to base64 of the challenge body.
   const challengeB64 = res.headers.get("payment-required") ?? Buffer.from(res.body).toString("base64");
+
+  // Overcharge guard: never sign a payment bigger than what the plan quoted (with a
+  // small tolerance) or the absolute per-call ceiling. This is the fix for the real leak
+  // where an agent listed at ~$0.11 demanded $3 in its live challenge.
+  const cost = readChallengeCost(challengeB64);
+  if (cost) {
+    const quoted = step.agent.feeAmount || 0;
+    const allowed = Math.max(quoted * 1.5, 0.002); // tolerance for unit rounding on sub-cent quotes
+    if (cost.usdt > allowed || cost.usdt > MAX_ABS_PER_CALL_USDT) {
+      return { output: null, paid: false, error: `overcharge blocked: agent demands $${cost.usdt} (quoted $${quoted}, cap $${Math.min(allowed, MAX_ABS_PER_CALL_USDT)})`, input: body };
+    }
+    if (cost.asset && cost.asset !== USDT_ASSET_LC) {
+      return { output: null, paid: false, error: `payment asset mismatch: challenge wants ${cost.asset}, not USDT`, input: body };
+    }
+  }
+
   const auth = await signPayment(challengeB64);
   if (!auth) return { output: null, paid: false, error: "payment signing failed", input: body };
 

@@ -48,8 +48,19 @@ function fetchAllA2McpAgents(): MarketplaceAgent[] {
   const allAgents: MarketplaceAgent[] = [];
   const seenIds = new Set<string>();
 
-  // Search multiple categories to cover the marketplace breadth
-  const queries = ["A2MCP", "security", "market", "data", "defi", "social", "content", "onchain"];
+  // Broad semantic sweep to reach the whole marketplace. The backend search is a
+  // similarity ranker with no "list all", so we union the top matches across many
+  // diverse keywords — this reaches ~107 unique A2MCP agents (effectively the full
+  // callable marketplace). Cached for 5 min so it runs once, not per request.
+  const queries = [
+    "ai", "crypto", "trading", "market", "data", "security", "audit", "news", "social",
+    "sentiment", "nft", "defi", "yield", "swap", "token", "price", "onchain", "wallet",
+    "analytics", "signal", "research", "meme", "derivatives", "funding", "liquidation",
+    "twitter", "kol", "content", "art", "game", "sports", "prediction", "health", "legal",
+    "credit", "payment", "bridge", "stake", "dex", "rpc", "chart", "alert", "monitor",
+    "scan", "risk", "brief", "quant", "arbitrage", "options", "stocks", "macro", "whale",
+    "airdrop", "launch", "mint", "A2MCP",
+  ];
 
   for (const query of queries) {
     try {

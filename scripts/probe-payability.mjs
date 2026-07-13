@@ -92,13 +92,25 @@ for (const a of agents) {
   console.error(`  #${res.id} ${("$"+res.fee).padEnd(9)} ${res.verdict.padEnd(18)} ${res.name}`);
 }
 
-const payable = results.filter(r=>["PAID-SETTLED","free-data","free-200"].includes(r.verdict));
+// Data-usable = settled/free AND returned real data AND not an MCP/topup endpoint (those
+// settle but yield no usable one-shot data). This auto-curation is what keeps us from
+// hand-maintaining the allowlist as the marketplace changes.
+function dataUsable(r) {
+  if (!["PAID-SETTLED","free-data","free-200"].includes(r.verdict)) return false;
+  if (r.data === false) return false;
+  const ep = (r.endpoint||"").toLowerCase();
+  if (ep.endsWith("/mcp") || ep.includes("/topup")) return false;
+  return true;
+}
+const settled = results.filter(r=>["PAID-SETTLED","free-data","free-200"].includes(r.verdict));
+const usable = results.filter(dataUsable);
 mkdirSync("data",{recursive:true});
 writeFileSync("data/payable-agents.json", JSON.stringify({
-  probedAt:"2026-07-12", totalProbed:results.length, totalSpent:spent,
-  payableIds: payable.map(p=>p.id),
-  payable: payable.map(p=>({id:p.id,name:p.name,fee:p.fee,verdict:p.verdict,endpoint:p.endpoint,service:p.service,desc:p.desc})),
+  probedAt:"2026-07-13", totalProbed:results.length, totalSpent:spent,
+  payableIds: usable.map(p=>p.id),                       // routing set = data-usable only
+  settledButUnusable: settled.filter(r=>!dataUsable(r)).map(p=>({id:p.id,name:p.name,reason:(p.endpoint||"").endsWith("/mcp")?"mcp":(p.endpoint||"").includes("/topup")?"topup":"no-data"})),
+  payable: usable.map(p=>({id:p.id,name:p.name,fee:p.fee,verdict:p.verdict,endpoint:p.endpoint,service:p.service,desc:p.desc})),
   all: results.map(r=>({id:r.id,name:r.name,fee:r.fee,verdict:r.verdict})),
 }, null, 2));
-console.error(`\nDONE. spent $${spent.toFixed(4)}. payable: ${payable.length}/${results.length}`);
-console.error("payable:", payable.map(p=>`#${p.id} ${p.name} (${p.verdict})`).join(", "));
+console.error(`\nDONE. spent $${spent.toFixed(4)}. settled: ${settled.length}, data-usable: ${usable.length}/${results.length}`);
+console.error("data-usable:", usable.map(p=>`#${p.id} ${p.name}`).join(", "));

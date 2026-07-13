@@ -6,17 +6,21 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BindPlan, BindStep, PlanRequest } from "./types.js";
 import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceService } from "./marketplace.js";
+import { selectAgents, type SelectCandidate } from "./select.js";
 
 // Guardrails so an auto-plan is never surprising or nonsensical.
 const PER_STEP_FEE_CEILING = 0.60; // never silently add a pricey agent (e.g. a $3.30 token launcher)
 const MAX_TOTAL_USDT = 1.5;        // cap the whole quote
 
-// Tested-payable agents. A live probe (scripts/probe-payability.mjs) signs a real x402
-// payment against each marketplace agent and records which ones actually SETTLE — most
-// third-party sellers reject even a correctly-signed payment. We bias hard to the ones
-// that pay out so plans execute for real instead of erroring on the payment step.
-// Loaded from data/payable-agents.json (re-runnable) with a proven fallback baked in.
-const FALLBACK_PAYABLE = ["2023", "4215", "3209", "4413", "3887", "3417"];
+// Tested-payable-AND-data-usable agents. A live probe (scripts/probe-payability.mjs)
+// signs a real x402 payment against each marketplace agent; most third-party sellers
+// reject even a correctly-signed payment. Of those that settle, some still return no
+// usable one-shot data (AlphaHunter #4215 is a non-standard MCP server; Clawby #3209 is
+// a credit-topup, not a data call) — those are excluded. We bias hard to agents that
+// both pay out AND return real data. Loaded from data/payable-agents.json (re-runnable).
+const FALLBACK_PAYABLE = ["2023", "4413", "3417", "3887"];
+// Settle-but-unusable agents: kept out of the trusted set even if a probe lists them.
+const EXCLUDE_IDS = new Set(["4215", "3209"]); // AlphaHunter (MCP), Clawby (topup)
 function loadPayableIds(): Set<string> {
   try {
     const dir = process.env.BIND_DATA_DIR ?? "data";
@@ -24,7 +28,7 @@ function loadPayableIds(): Set<string> {
     const ids = Array.isArray(raw.payableIds) ? raw.payableIds.map(String) : [];
     // #2023 (OKX-official Onchain Data Explorer) settles on its main services even when
     // the probe's cheapest sub-endpoint doesn't — always keep it in the trusted set.
-    return new Set<string>([...ids, "2023", ...FALLBACK_PAYABLE]);
+    return new Set<string>([...ids, "2023", ...FALLBACK_PAYABLE].filter((id) => !EXCLUDE_IDS.has(id)));
   } catch {
     return new Set<string>(FALLBACK_PAYABLE);
   }
@@ -84,8 +88,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     return true;
   });
 
-  // Rank: agents that actually settle payments first, then by relevance score. This is
-  // what makes a plan execute for real — an unpayable agent just errors on the pay step.
+  // Pre-rank payable-first (used both as the AI candidate order and the heuristic fallback).
   eligible.sort((a, b) => {
     const aPay = PAYABLE_AGENT_IDS.has(a.agent.agentId) ? 1 : 0;
     const bPay = PAYABLE_AGENT_IDS.has(b.agent.agentId) ? 1 : 0;
@@ -93,23 +96,47 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     return b.score - a.score;
   });
 
-  // Select up to 4, preferring role diversity, and never exceeding the total cap.
   const selectedAgents: MarketplaceAgent[] = [];
-  const usedRoles = new Set<string>();
   let runningTotal = 0;
 
-  for (const { agent } of eligible) {
-    if (selectedAgents.length >= 4) break;
-    const fee = cheapestService(agent).feeAmount;
-    if (runningTotal + fee > MAX_TOTAL_USDT) continue;
-    const role = determineAgentRole(agent, req.goal);
-    // Prefer new roles for diversity — but never skip a tested-payable agent for it.
-    // A payable same-role agent beats an unpayable diverse one that would just error.
-    const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
-    if (!payable && usedRoles.has(role) && selectedAgents.length >= 2) continue;
-    selectedAgents.push(agent);
-    usedRoles.add(role);
-    runningTotal += fee;
+  // Smart routing: let Claude pick from the whole eligible catalog (semantic fit +
+  // payability + complementarity). This is what scales Bind to any goal across the
+  // full marketplace without a hand-tuned agent list.
+  const byId = new Map(eligible.map((e) => [e.agent.agentId, e.agent]));
+  const candidates: SelectCandidate[] = eligible.map(({ agent }) => ({
+    agentId: agent.agentId,
+    name: agent.name,
+    category: determineAgentRole(agent, req.goal),
+    description: agent.description,
+    cheapestFee: cheapestService(agent).feeAmount,
+    payable: PAYABLE_AGENT_IDS.has(agent.agentId),
+  }));
+  const picks = await selectAgents(req.goal, candidates, 4);
+  if (picks) {
+    for (const p of picks) {
+      const agent = byId.get(p.agentId);
+      if (!agent) continue;
+      const fee = cheapestService(agent).feeAmount;
+      if (runningTotal + fee > MAX_TOTAL_USDT) continue;
+      selectedAgents.push(agent);
+      runningTotal += fee;
+    }
+  }
+
+  // Heuristic fallback (no AI key, or AI returned nothing): payable-first, role-diverse.
+  if (selectedAgents.length === 0) {
+    const usedRoles = new Set<string>();
+    for (const { agent } of eligible) {
+      if (selectedAgents.length >= 4) break;
+      const fee = cheapestService(agent).feeAmount;
+      if (runningTotal + fee > MAX_TOTAL_USDT) continue;
+      const role = determineAgentRole(agent, req.goal);
+      const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
+      if (!payable && usedRoles.has(role) && selectedAgents.length >= 2) continue;
+      selectedAgents.push(agent);
+      usedRoles.add(role);
+      runningTotal += fee;
+    }
   }
 
   // If no agents qualify, return empty plan

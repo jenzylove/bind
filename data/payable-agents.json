@@ -3,30 +3,24 @@
   "totalProbed": 40,
   "totalSpent": 0.036000000000000004,
   "payableIds": [
-    "4215",
-    "3209",
+    "2023",
     "4413",
-    "3887",
-    "3417"
+    "3417",
+    "3887"
+  ],
+  "settledButUnusable": [
+    { "id": "4215", "name": "AlphaHunter", "reason": "mcp — non-standard MCP-over-x402 server, rejects paid JSON-RPC; needs full MCP client" },
+    { "id": "3209", "name": "Clawby", "reason": "topup — only service is a credit purchase, returns onboarding docs not one-shot data" }
   ],
   "payable": [
     {
-      "id": "4215",
-      "name": "AlphaHunter",
-      "fee": 0.001,
+      "id": "2023",
+      "name": "Onchain Data Explorer",
+      "fee": 0.000015,
       "verdict": "PAID-SETTLED",
-      "endpoint": "https://okxai.getbnb.site/mcp",
-      "service": "Alpha Signal Scanner",
-      "desc": "发现并评分 prediction market 中的高价值交易机会，适合希望快速筛选市场、跟踪高手和评估跟单风险的用户。\n用户需要提供：1. 市场类别或市场关键词 2. 可选的交易者名称 3. 可选的模拟金额"
-    },
-    {
-      "id": "3209",
-      "name": "Clawby",
-      "fee": 0.005,
-      "verdict": "PAID-SETTLED",
-      "endpoint": "https://api.openclawby.com/x402/topup",
-      "service": "Live Market Data API",
-      "desc": "一次支付获得 1000 次 Clawby 实时金融数据 API 调用额度:覆盖美股与期权、加密货币、衍生品、DEX 与 meme 币、预测市场、社交舆情、SEC 财报及 75+ 链 RPC 共 280+ 接口,适合需要实时行情与链上数据的 AI agent。\n需提供:1. 你的 "
+      "endpoint": "https://x402.6551.io/okx/get_token_info",
+      "service": "OKX-official on-chain data (19 services)",
+      "desc": "Token info, holders, contract source, price, price history, address profile on X Layer. Settles on main services."
     },
     {
       "id": "4413",

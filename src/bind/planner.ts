@@ -9,8 +9,9 @@ import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceServic
 import { selectAgents, type SelectCandidate } from "./select.js";
 
 // Guardrails so an auto-plan is never surprising or nonsensical.
-const PER_STEP_FEE_CEILING = 0.60; // never silently add a pricey agent (e.g. a $3.30 token launcher)
-const MAX_TOTAL_USDT = 1.5;        // cap the whole quote
+const PER_STEP_FEE_CEILING = 0.60;   // ceiling for tested-payable agents
+const UNTESTED_FEE_CEILING = 0.05;   // never gamble much on an unproven agent (e.g. Messari lists $0.10, then 403s or overcharges)
+const MAX_TOTAL_USDT = 1.5;          // cap the whole quote
 
 // Tested-payable-AND-data-usable agents. A live probe (scripts/probe-payability.mjs)
 // signs a real x402 payment against each marketplace agent; most third-party sellers
@@ -84,7 +85,11 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   const eligible = scored.filter(({ agent }) => {
     if (agent.services.length === 0) return false;
     if (EXCLUDE_IDS.has(agent.agentId)) return false; // settle-but-unusable (MCP/topup) — never route to these
-    if (cheapestService(agent).feeAmount > PER_STEP_FEE_CEILING) return false;
+    const fee = cheapestService(agent).feeAmount;
+    const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
+    // Tested-payable agents get the full ceiling; unproven agents are capped low so a
+    // pricey gamble (that usually 403s or overcharges) never bloats the quote.
+    if (fee > (payable ? PER_STEP_FEE_CEILING : UNTESTED_FEE_CEILING)) return false;
     if (analytical && isActionAgent(agent)) return false;
     return true;
   });

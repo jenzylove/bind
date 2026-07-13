@@ -45,7 +45,14 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, ...SERVICE, paymentConfigured: isConfiguredForPayment() });
 });
 
-app.get("/", (_req, res) => {
+app.get("/", (req, res) => {
+  // A browser sharing/opening this link should land on the actual product, not raw JSON.
+  // Machine clients (OKX discovery, curl, other agents) send Accept: application/json (or
+  // */*) and still get the service descriptor — this doesn't change the A2MCP contract.
+  if (req.accepts(["html", "json"]) === "html") {
+    res.sendFile(join(PUBLIC_DIR, "bind.html"));
+    return;
+  }
   res.json({
     ...SERVICE,
     network: config.network,

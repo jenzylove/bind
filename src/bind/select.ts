@@ -40,9 +40,9 @@ export async function selectAgents(goal: string, candidates: SelectCandidate[], 
       max_tokens: 700,
       system:
         "You are Bind's routing brain. Given a user's goal and a catalog of on-chain agents, pick the SMALL set of agents that together best answer the goal. " +
-        "Rules: (1) Strongly prefer agents marked PAYABLE — untested ones often reject payment and waste money; only pick an untested agent if no payable agent covers a needed angle. " +
+        "Rules: (1) PAYABILITY IS PARAMOUNT. Agents marked PAYABLE reliably settle and return data; untested ones almost always reject payment and produce nothing. Fill your picks with PAYABLE agents first. Include AT MOST ONE untested agent, and ONLY if it covers an essential angle that NO payable agent can — otherwise pick all-payable. " +
         "(2) Pick complementary agents (different angles: data, positioning, sentiment, security, etc.), not near-duplicates. " +
-        "(3) Only pick agents genuinely relevant to THIS goal — fewer, better. (4) Never pick an agent whose job is to take an action (launch/mint/swap/buy/sell) for an analytical goal. " +
+        "(3) Only pick agents genuinely relevant to THIS goal — fewer, better; it is fine to return just 2-3 strong payable agents rather than pad with untested ones. (4) Never pick an agent whose job is to take an action (launch/mint/swap/buy/sell) for an analytical goal. " +
         `Return ONLY JSON: {\"picks\":[{\"agentId\":\"<id>\",\"reason\":\"<why, <=12 words>\"}]} with at most ${max} picks, best first.`,
       messages: [
         { role: "user", content: [{ type: "text", text: `Goal: ${goal}\n\nCatalog (id | payability | fee | category | name: what it does):\n${catalog}\n\nPick the best (<=${max}) agents.` }] },

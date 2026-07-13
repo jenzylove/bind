@@ -4,236 +4,156 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bind — your entry to the agent economy</title>
+<meta name="description" content="Describe a goal. Bind finds the right on-chain agents, pays them via x402, verifies their work, and hands you one finished result with an on-chain receipt.">
+<meta property="og:title" content="Bind — your entry to the agent economy">
+<meta property="og:description" content="Hire, pay, and verify AI agents in one call. Real x402 payments on X Layer, verified outputs, on-chain receipts.">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #08080c; --panel: #101018; --panel2: #0c0c13; --border: #20202c;
+    --text: #e8e8ef; --muted: #8a8a99; --dim: #55555f;
+    --accent: #7c7cff; --accent2: #4f46e5; --green: #4ade80; --red: #f87171; --amber: #fbbf24;
+  }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0a0a0f;
-    color: #e0e0e0;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    background: radial-gradient(1200px 600px at 50% -10%, #17172a 0%, var(--bg) 55%);
+    color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center;
   }
-  .container { max-width: 720px; width: 100%; padding: 40px 20px; }
+  .container { max-width: 760px; width: 100%; padding: 44px 20px 80px; }
 
-  header { text-align: center; margin-bottom: 48px; }
-  .logo { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; color: #666; margin-bottom: 8px; }
-  h1 { font-size: 36px; font-weight: 700; color: #fff; margin-bottom: 12px; }
-  .subtitle { color: #888; font-size: 16px; line-height: 1.5; }
+  header { text-align: center; margin-bottom: 40px; }
+  .logo {
+    display: inline-flex; align-items: center; gap: 9px; font-size: 13px; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 18px;
+  }
+  .logo .dot { width: 9px; height: 9px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--green)); box-shadow: 0 0 14px var(--accent); }
+  h1 { font-size: 40px; font-weight: 760; letter-spacing: -0.02em; line-height: 1.1;
+       background: linear-gradient(180deg, #fff, #b9b9d6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 14px; }
+  .subtitle { color: var(--muted); font-size: 16px; line-height: 1.6; max-width: 540px; margin: 0 auto; }
+  .chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+  .chip { font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; cursor: pointer; transition: .18s; }
+  .chip:hover { color: var(--text); border-color: var(--accent); }
 
-  .input-area {
-    background: #12121a;
-    border: 1px solid #222;
-    border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 24px;
-  }
-  .input-area label { display: block; font-size: 14px; color: #888; margin-bottom: 8px; }
-  .input-area textarea {
-    width: 100%;
-    min-height: 80px;
-    background: transparent;
-    border: none;
-    color: #fff;
-    font-size: 16px;
-    font-family: inherit;
-    resize: vertical;
-    outline: none;
-    line-height: 1.5;
-  }
-  .input-area textarea::placeholder { color: #444; }
-  .input-hint { font-size: 12px; color: #555; margin-top: 8px; }
-  .input-hint span { color: #666; cursor: pointer; }
-  .input-hint span:hover { color: #888; }
+  .input-area { background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 20px; margin-bottom: 16px; transition: border-color .2s; }
+  .input-area:focus-within { border-color: var(--accent); }
+  .input-area label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .input-area textarea { width: 100%; min-height: 74px; background: transparent; border: none; color: #fff; font-size: 16px; font-family: inherit; resize: vertical; outline: none; line-height: 1.55; }
+  .input-area textarea::placeholder { color: var(--dim); }
 
-  .actions { display: flex; gap: 12px; margin-bottom: 24px; }
-  .btn {
-    flex: 1;
-    padding: 14px 24px;
-    border: none;
-    border-radius: 12px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .btn-primary { background: #4f46e5; color: #fff; }
-  .btn-primary:hover { background: #4338ca; }
-  .btn-primary:disabled { background: #333; color: #666; cursor: not-allowed; }
-  .btn-secondary { background: #1a1a24; color: #e0e0e0; border: 1px solid #222; }
-  .btn-secondary:hover { background: #222; }
+  .actions { display: flex; gap: 12px; margin-bottom: 20px; }
+  .btn { flex: 1; padding: 15px 24px; border: none; border-radius: 13px; font-size: 15px; font-weight: 650; cursor: pointer; transition: all 0.18s; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent2), var(--accent)); color: #fff; box-shadow: 0 6px 24px -8px var(--accent); }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-primary:disabled { background: #262633; color: #666; cursor: not-allowed; box-shadow: none; filter: none; }
+  .btn-secondary { background: #16161f; color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: #1d1d28; }
+  .btn-ghost { flex: none; background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 10px 16px; font-size: 13px; border-radius: 10px; }
+  .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
 
-  /* Plan display */
-  .plan { display: none; }
-  .plan.visible { display: block; }
+  .plan, .result { display: none; }
+  .plan.visible, .result.visible { display: block; animation: rise .35s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
-  .price-tag {
-    background: #1a1a24;
-    border: 1px solid #333;
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .price-label { font-size: 14px; color: #888; }
-  .price-value { font-size: 28px; font-weight: 700; color: #4ade80; }
-  .price-value span { font-size: 14px; color: #888; }
+  .price-tag { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 20px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .price-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .price-value { font-size: 28px; font-weight: 740; color: var(--green); }
+  .price-value span { font-size: 13px; color: var(--muted); }
 
-  .pipeline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
-  .pipeline-step {
-    background: #12121a;
-    border: 1px solid #222;
-    border-radius: 10px;
-    padding: 14px 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    transition: all 0.3s;
-  }
-  .pipeline-step .step-num {
-    width: 28px; height: 28px;
-    border-radius: 50%;
-    background: #1a1a24;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 600; color: #666;
-    flex-shrink: 0;
-  }
-  .pipeline-step .step-agent {
-    flex: 1;
-  }
-  .pipeline-step .step-agent .name { font-weight: 600; color: #fff; font-size: 14px; }
-  .pipeline-step .step-agent .desc { font-size: 12px; color: #666; }
-  .pipeline-step .step-price { font-size: 13px; color: #4ade80; font-weight: 600; flex-shrink: 0; }
-  .pipeline-step.passed { border-color: #4ade8044; }
-  .pipeline-step.failed { border-color: #ef444444; }
-  .pipeline-step.running { border-color: #4f46e544; }
-  .pipeline-step .step-num.passed { background: #4ade8022; color: #4ade80; }
-  .pipeline-step .step-num.failed { background: #ef444422; color: #ef4444; }
-  .pipeline-step .step-num.running { background: #4f46e522; color: #4f46e5; }
-
-  .connector { text-align: center; color: #333; font-size: 16px; }
+  .pipeline { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+  .pipeline-step { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 13px; transition: all 0.3s; }
+  .pipeline-step .step-num { width: 30px; height: 30px; border-radius: 50%; background: #1a1a24; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 650; color: var(--muted); flex-shrink: 0; }
+  .pipeline-step .step-agent { flex: 1; min-width: 0; }
+  .pipeline-step .step-agent .name { font-weight: 650; color: #fff; font-size: 14px; }
+  .pipeline-step .step-agent .desc { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pipeline-step .step-price { font-size: 13px; color: var(--green); font-weight: 650; flex-shrink: 0; }
+  .pipeline-step.passed { border-color: #4ade8055; background: #0d140f; }
+  .pipeline-step.failed, .pipeline-step.errored { border-color: #f8717133; }
+  .pipeline-step.running { border-color: var(--accent); }
+  .pipeline-step.running .step-num { background: #4f46e533; color: var(--accent); }
+  .pipeline-step.passed .step-num { background: #4ade8022; color: var(--green); }
+  .pipeline-step.failed .step-num, .pipeline-step.errored .step-num { background: #f8717122; color: var(--red); }
+  .step-tx { font-size: 11px; }
+  .step-tx a { color: var(--accent); text-decoration: none; }
+  .step-tx a:hover { text-decoration: underline; }
 
   .exec-btn { width: 100%; }
 
-  /* Execution */
-  .result { display: none; }
-  .result.visible { display: block; }
+  .result-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 22px; margin-top: 16px; }
+  .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .result-status { font-size: 12px; font-weight: 650; padding: 5px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: .05em; }
+  .result-status.completed { background: #4ade8022; color: var(--green); }
+  .result-status.partial { background: #fbbf2422; color: var(--amber); }
+  .result-status.failed { background: #f8717122; color: var(--red); }
+  .result-status.running { background: #4f46e522; color: var(--accent); }
 
-  .result-card {
-    background: #12121a;
-    border: 1px solid #222;
-    border-radius: 12px;
-    padding: 20px;
-    margin-top: 16px;
-  }
-  .result-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-  }
-  .result-status {
-    font-size: 14px;
-    font-weight: 600;
-    padding: 4px 12px;
-    border-radius: 20px;
-  }
-  .result-status.completed { background: #4ade8022; color: #4ade80; }
-  .result-status.failed { background: #ef444422; color: #ef4444; }
-  .result-status.running { background: #4f46e522; color: #4f46e5; }
+  .deliverable-block { margin: 16px 0; padding: 18px; background: linear-gradient(180deg, #0e0e18, var(--panel2)); border: 1px solid #2a2a3d; border-radius: 14px; }
+  .deliverable-block .tag { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; font-weight: 650; display: flex; align-items: center; gap: 7px; }
+  #deliverable { font-size: 14.5px; line-height: 1.68; color: var(--text); white-space: pre-wrap; }
 
-  .result-step {
-    border-top: 1px solid #222;
-    padding: 12px 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .result-step:last-child { border-bottom: 1px solid #222; }
-  .result-step .passed { color: #4ade80; }
-  .result-step .failed { color: #ef4444; }
-  .result-step .status-icon { font-size: 18px; }
+  .result-step { border-top: 1px solid var(--border); padding: 12px 2px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .result-step:first-child { border-top: none; }
+  .result-step .meta { min-width: 0; }
+  .result-step .agent-name { font-weight: 640; color: #fff; font-size: 14px; }
+  .result-step .agent-detail { font-size: 12px; color: var(--dim); }
+  .badge { font-size: 11px; font-weight: 650; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+  .badge.passed { background: #4ade8018; color: var(--green); }
+  .badge.failed, .badge.errored { background: #f8717118; color: var(--red); }
 
-  .result-output {
-    background: #0a0a0f;
-    border-radius: 8px;
-    padding: 16px;
-    margin-top: 16px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 13px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    max-height: 300px;
-    overflow-y: auto;
-    color: #888;
-  }
+  .result-output { background: var(--bg); border-radius: 8px; padding: 14px; margin-top: 10px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; max-height: 280px; overflow: auto; color: var(--muted); }
 
-  .receipt {
-    background: #0a0a0f;
-    border: 1px solid #222;
-    border-radius: 10px;
-    padding: 16px;
-    margin-top: 16px;
-    font-size: 13px;
-  }
-  .receipt .line { display: flex; justify-content: space-between; padding: 4px 0; }
-  .receipt .label { color: #666; }
-  .receipt .value { color: #ccc; }
+  .receipt { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-top: 16px; font-size: 13px; }
+  .receipt .title { font-weight: 650; margin-bottom: 10px; color: #fff; display: flex; align-items: center; gap: 7px; }
+  .receipt .line { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; }
+  .receipt .label { color: var(--muted); }
+  .receipt .value { color: var(--text); text-align: right; word-break: break-all; }
+  .receipt .value a { color: var(--accent); text-decoration: none; }
+  .receipt .value a:hover { text-decoration: underline; }
 
-  .attribution { text-align: center; margin-top: 48px; font-size: 12px; color: #444; }
+  .share-row { display: flex; gap: 10px; margin-top: 16px; }
+  .share-x { flex: 1; background: #000; border: 1px solid #2a2a3d; color: #fff; border-radius: 12px; padding: 13px; font-weight: 650; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: .18s; }
+  .share-x:hover { border-color: var(--accent); }
 
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-  .pulse { animation: pulse 1.5s ease-in-out infinite; }
+  .attribution { text-align: center; margin-top: 44px; font-size: 12px; color: var(--dim); }
+  .attribution a { color: var(--muted); text-decoration: none; }
 
-  .error-msg {
-    background: #2a1515;
-    border: 1px solid #5a2020;
-    border-radius: 8px;
-    padding: 12px;
-    color: #ef4444;
-    font-size: 13px;
-    margin-top: 12px;
-    display: none;
-  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+  .pulse { animation: pulse 1.3s ease-in-out infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 14px; height: 14px; border: 2px solid #ffffff44; border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+
+  .error-msg { background: #241416; border: 1px solid #4a2226; border-radius: 10px; padding: 12px 14px; color: var(--red); font-size: 13px; margin-bottom: 16px; display: none; }
   .error-msg.visible { display: block; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: #16161f; border: 1px solid var(--border); color: var(--text); padding: 11px 18px; border-radius: 10px; font-size: 13px; opacity: 0; pointer-events: none; transition: .25s; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-  @media (max-width: 600px) {
-    .container { padding: 20px 16px; }
-    h1 { font-size: 28px; }
-  }
+  @media (max-width: 600px) { .container { padding: 24px 16px 60px; } h1 { font-size: 30px; } .actions { flex-direction: column; } }
 </style>
 </head>
 <body>
 <div class="container">
   <header>
-    <div class="logo">Bind</div>
+    <div class="logo"><span class="dot"></span> Bind</div>
     <h1>Your entry to the agent economy</h1>
-    <p class="subtitle">Tell us what you need. We'll find the right agents, pay them,<br>verify their work, and hand you the finished result.</p>
+    <p class="subtitle">Describe a goal. Bind finds the right on-chain agents, pays them via x402, verifies each output, and hands you one finished result — with an on-chain receipt.</p>
+    <div class="chips">
+      <span class="chip" onclick="fillGoal('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">📊 BTC market brief</span>
+      <span class="chip" onclick="fillGoal('What are the widest crypto funding-rate arbitrage opportunities right now?')">💹 Funding arb scan</span>
+      <span class="chip" onclick="fillGoal('Give me the current derivatives positioning across major coins')">🎯 Derivatives positioning</span>
+    </div>
   </header>
 
+  <div class="error-msg" id="errorMsg"></div>
+
   <!-- Goal input -->
-  <div class="input-area">
+  <div class="input-area" id="inputArea">
     <label for="goal">What do you want to get done?</label>
-    <textarea id="goal" placeholder="e.g. Is token 0x1234... safe to buy? or Give me a market brief on BTC">Is token 0x1234 safe to buy?</textarea>
-    <div class="input-hint">
-      Try: <span onclick="fillGoal('Is token 0x1234 safe to buy?')">token due diligence</span> ·
-      <span onclick="fillGoal('Give me a market brief')">market brief</span> ·
-      <span onclick="fillGoal('Check if this contract is a honeypot')">honeypot check</span>
-    </div>
+    <textarea id="goal" placeholder="e.g. Give me a market brief on Bitcoin: positioning, funding, sentiment">Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment</textarea>
   </div>
 
-  <div class="actions">
+  <div class="actions" id="actionRow">
     <button class="btn btn-primary" onclick="createPlan()" id="planBtn">Create Plan</button>
     <button class="btn btn-secondary" onclick="clearAll()">Clear</button>
   </div>
-
-  <div class="error-msg" id="errorMsg"></div>
 
   <!-- Plan display -->
   <div class="plan" id="planSection">
@@ -250,228 +170,216 @@
 
     <div class="pipeline" id="pipeline"></div>
 
-    <button class="btn btn-primary exec-btn" onclick="executePlan()" id="execBtn">
-      ❯ Execute Plan
-    </button>
+    <button class="btn btn-primary exec-btn" onclick="executePlan()" id="execBtn">❯ Execute &amp; Pay Agents</button>
   </div>
 
   <!-- Execution results -->
   <div class="result" id="resultSection">
     <div class="result-card">
       <div class="result-header">
-        <div>
-          <div style="font-size:18px;font-weight:600" id="resultTitle">Execution Complete</div>
-          <div style="font-size:13px;color:#666" id="resultSummary">3 steps, 0.11 USDT paid</div>
-        </div>
+        <div style="font-size:18px;font-weight:650" id="resultTitle">Execution Complete</div>
         <div class="result-status" id="resultStatus">completed</div>
       </div>
+      <div style="font-size:13px;color:var(--muted)" id="resultSummary">—</div>
 
-      <!-- The deliverable: one readable answer synthesized from the verified agents -->
-      <div id="deliverableBlock" style="margin:14px 0;padding:16px;background:#0d0d12;border:1px solid #2a2a35;border-radius:12px;">
-        <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#7c7cff;margin-bottom:8px;font-weight:600;">Your Deliverable</div>
-        <div id="deliverable" style="font-size:14px;line-height:1.6;color:#e8e8ef;white-space:pre-wrap;">Waiting for execution...</div>
+      <div class="deliverable-block">
+        <div class="tag">✦ Your Deliverable</div>
+        <div id="deliverable">Waiting for execution…</div>
       </div>
 
       <div id="resultSteps"></div>
 
-      <details style="margin-top:12px;">
-        <summary style="cursor:pointer;font-size:12px;color:#666;">Raw execution data &amp; per-agent outputs</summary>
-        <div class="result-output" id="resultOutput" style="margin-top:8px;"></div>
-      </details>
-
       <div class="receipt" id="receipt">
-        <div style="font-weight:600;margin-bottom:8px;color:#fff;">⊞ Receipt</div>
-        <div class="line"><span class="label">Execution ID</span><span class="value" id="receiptId">-</span></div>
+        <div class="title">⊞ On-chain Receipt</div>
+        <div class="line"><span class="label">Execution ID</span><span class="value" id="receiptId">—</span></div>
         <div class="line"><span class="label">Total paid</span><span class="value" id="receiptTotal">0 USDT</span></div>
-        <div class="line"><span class="label">On-chain anchor</span><span class="value" id="receiptAnchor">pending</span></div>
+        <div class="line"><span class="label">Anchored on X Layer</span><span class="value" id="receiptAnchor">—</span></div>
       </div>
+
+      <div class="share-row">
+        <button class="share-x" onclick="shareOnX()">𝕏 &nbsp;Share this receipt</button>
+        <button class="btn-ghost" onclick="copyLink()">Copy link</button>
+      </div>
+
+      <details style="margin-top:14px;">
+        <summary style="cursor:pointer;font-size:12px;color:var(--dim)">Raw execution data</summary>
+        <div class="result-output" id="resultOutput"></div>
+      </details>
     </div>
 
-    <button class="btn btn-secondary" onclick="resetAll()" style="margin-top:16px">← Start Over</button>
+    <button class="btn btn-secondary" onclick="resetAll()" style="margin-top:16px">← Run another goal</button>
   </div>
 
-  <div class="attribution">Built for the OKX AI Genesis Hackathon</div>
+  <div class="attribution">Built for the <a href="https://www.okx.com" target="_blank" rel="noopener">OKX AI Genesis</a> Hackathon · payments settle on X Layer via x402</div>
 </div>
+<div class="toast" id="toast"></div>
 
 <script>
-// State
+const EXPLORER = 'https://www.oklink.com/xlayer/tx/';
 let currentPlan = null;
 let currentExecution = null;
+let animTimer = null;
 
-function fillGoal(text) {
-  document.getElementById('goal').value = text;
-}
-
-function showError(msg) {
-  const el = document.getElementById('errorMsg');
-  el.textContent = msg;
-  el.classList.add('visible');
-}
-
-function hideError() {
-  document.getElementById('errorMsg').classList.remove('visible');
-}
+function fillGoal(t) { document.getElementById('goal').value = t; }
+function showError(m) { const e = document.getElementById('errorMsg'); e.textContent = m; e.classList.add('visible'); }
+function hideError() { document.getElementById('errorMsg').classList.remove('visible'); }
+function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1900); }
+function txLink(h) { return h && h.startsWith('0x') ? `<a href="${EXPLORER}${h}" target="_blank" rel="noopener">${h.slice(0,10)}…${h.slice(-6)}</a>` : (h || '—'); }
 
 async function createPlan() {
   hideError();
   const goal = document.getElementById('goal').value.trim();
   if (!goal) { showError('Please describe what you want to get done.'); return; }
-
   const btn = document.getElementById('planBtn');
-  btn.disabled = true;
-  btn.textContent = 'Planning...';
-
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Finding agents…';
   document.getElementById('planSection').classList.remove('visible');
   document.getElementById('resultSection').classList.remove('visible');
-
   try {
-    const res = await fetch('/bind/plan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal }),
-    });
+    const res = await fetch('/bind/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal }) });
     const data = await res.json();
-
-    if (!res.ok) { showError(data.message || 'Failed to create plan'); btn.disabled = false; btn.textContent = 'Create Plan'; return; }
-
+    if (!res.ok) { showError(data.message || 'Failed to create plan'); return; }
+    if (!data.plan.steps.length) { showError(data.plan.note || 'No compatible agents found for this goal.'); return; }
     currentPlan = data.plan;
-
-    // Render price
     document.getElementById('totalPrice').innerHTML = `$${data.plan.totalPriceUsdt.toFixed(3)} <span>USDT</span>`;
     document.getElementById('agentCount').textContent = data.plan.steps.length;
-
-    // Render pipeline
     const pipeline = document.getElementById('pipeline');
     pipeline.innerHTML = '';
-    data.plan.steps.forEach((step, i) => {
+    data.plan.steps.forEach((step) => {
       pipeline.innerHTML += `
-        <div class="pipeline-step">
+        <div class="pipeline-step" data-step="${step.step}">
           <div class="step-num">${step.step}</div>
           <div class="step-agent">
             <div class="name">${step.agent.name}</div>
-            <div class="desc">${step.agent.serviceName}</div>
+            <div class="desc">${step.agent.serviceName || step.agent.category}</div>
           </div>
           <div class="step-price">$${step.agent.feeAmount.toFixed(3)}</div>
-        </div>
-        ${i < data.plan.steps.length - 1 ? '<div class="connector">↓</div>' : ''}
-      `;
+        </div>`;
     });
-
-    // Show plan section
     document.getElementById('planSection').classList.add('visible');
+    document.getElementById('planSection').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (e) { showError(`Connection error: ${e.message}`); }
+  finally { btn.disabled = false; btn.textContent = 'Create Plan'; }
+}
 
-  } catch (e) {
-    showError(`Connection error: ${e.message}`);
-  }
-
-  btn.disabled = false;
-  btn.textContent = 'Create Plan';
+function startRunningAnimation() {
+  const steps = [...document.querySelectorAll('.pipeline-step')];
+  let i = 0;
+  const cycle = () => {
+    steps.forEach(s => s.classList.remove('running'));
+    if (steps[i]) { steps[i].classList.add('running'); steps[i].querySelector('.step-num').innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px"></span>'; }
+    i = (i + 1) % steps.length;
+  };
+  cycle();
+  animTimer = setInterval(cycle, 1200);
 }
 
 async function executePlan() {
   if (!currentPlan) return;
-
   hideError();
   const btn = document.getElementById('execBtn');
-  btn.disabled = true;
-  btn.textContent = 'Executing...';
-
-  // Show result section with running state
-  document.getElementById('resultSection').classList.add('visible');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Paying &amp; verifying agents…';
+  const rs = document.getElementById('resultSection');
+  rs.classList.add('visible');
   document.getElementById('resultStatus').textContent = 'running';
   document.getElementById('resultStatus').className = 'result-status running';
-  document.getElementById('resultTitle').textContent = 'Running your workflow...';
-
-  // Animate pipeline steps
-  const steps = document.querySelectorAll('.pipeline-step');
-
+  document.getElementById('resultTitle').textContent = 'Running your workflow…';
+  document.getElementById('resultSummary').textContent = 'Discovering → paying → verifying across agents';
+  document.getElementById('deliverable').textContent = 'Agents are working. Paying each on X Layer and verifying outputs…';
+  document.getElementById('resultSteps').innerHTML = '';
+  startRunningAnimation();
   try {
-    const res = await fetch('/bind/execute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planId: currentPlan.planId }),
-    });
+    const res = await fetch('/bind/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ planId: currentPlan.planId }) });
     const data = await res.json();
+    if (!res.ok) { showError(data.message || 'Execution failed'); return; }
+    renderExecution(data);
+  } catch (e) { showError(`Execution error: ${e.message}`); }
+  finally { clearInterval(animTimer); btn.disabled = false; btn.innerHTML = '✓ Executed'; }
+}
 
-    if (!res.ok) { showError(data.message || 'Execution failed'); btn.disabled = false; btn.textContent = 'Execute Plan'; return; }
+function renderExecution(data) {
+  clearInterval(animTimer);
+  currentExecution = data;
+  const status = data.status;
+  document.getElementById('resultStatus').textContent = status;
+  document.getElementById('resultStatus').className = `result-status ${status}`;
+  document.getElementById('resultTitle').textContent =
+    status === 'completed' ? '✅ Workflow complete' : status === 'partial' ? '⚠️ Partial completion' : '❌ Execution failed';
+  document.getElementById('resultSummary').textContent =
+    `${data.completedSteps}/${data.totalSteps} agents verified · $${(data.totalPaid || 0).toFixed(3)} USDT paid on-chain`;
 
-    currentExecution = data;
+  // pipeline final states
+  const pSteps = [...document.querySelectorAll('.pipeline-step')];
+  (data.stepResults || []).forEach((sr, i) => {
+    if (!pSteps[i]) return;
+    pSteps[i].className = `pipeline-step ${sr.status}`;
+    const num = pSteps[i].querySelector('.step-num');
+    num.textContent = sr.status === 'passed' ? '✓' : '✕';
+  });
 
-    // Update result
-    const status = data.status;
-    document.getElementById('resultStatus').textContent = status;
-    document.getElementById('resultStatus').className = `result-status ${status}`;
-    document.getElementById('resultTitle').textContent = status === 'completed'
-      ? '✅ Workflow complete'
-      : status === 'partial'
-        ? '⚠️ Partial completion'
-        : '❌ Execution failed';
-    document.getElementById('resultSummary').textContent =
-      `${data.completedSteps}/${data.totalSteps} steps, ${data.totalPaid.toFixed(3)} USDT paid`;
-
-    // Animate steps based on results
-    data.stepResults.forEach((sr, i) => {
-      if (steps[i]) {
-        steps[i].className += ` ${sr.status}`;
-        const num = steps[i].querySelector('.step-num');
-        num.className += ` ${sr.status}`;
-        if (sr.status === 'passed') num.textContent = '✓';
-        if (sr.status === 'failed') num.textContent = '✗';
-      }
-    });
-
-    // Render step results
-    const resultSteps = document.getElementById('resultSteps');
-    resultSteps.innerHTML = '';
-    data.stepResults.forEach(sr => {
-      const passed = sr.status === 'passed';
-      resultSteps.innerHTML += `
-        <div class="result-step">
-          <div>
-            <div style="font-weight:600;color:#fff">${sr.agentName}</div>
-            <div style="font-size:12px;color:#666">${sr.verificationResult?.detail || sr.status}</div>
-          </div>
-          <div>
-            <span class="${passed ? 'passed' : 'failed'} status-icon">${passed ? '✓' : '✗'}</span>
-          </div>
+  // per-agent result rows with tx links
+  const box = document.getElementById('resultSteps');
+  box.innerHTML = '';
+  (data.stepResults || []).forEach(sr => {
+    const ok = sr.status === 'passed';
+    const paid = sr.paymentTxHash && sr.paymentTxHash.startsWith('0x');
+    box.innerHTML += `
+      <div class="result-step">
+        <div class="meta">
+          <div class="agent-name">${sr.agentName}</div>
+          <div class="agent-detail">${sr.verificationResult?.detail || sr.error || sr.status}</div>
+          ${paid ? `<div class="step-tx">paid: ${txLink(sr.paymentTxHash)}</div>` : ''}
         </div>
-      `;
-    });
+        <span class="badge ${sr.status}">${ok ? '✓ verified' : '✕ ' + sr.status}</span>
+      </div>`;
+  });
 
-    // The deliverable — the synthesized answer is the product, shown front and center.
-    document.getElementById('deliverable').textContent =
-      data.finalOutput || 'No deliverable was produced.';
+  document.getElementById('deliverable').textContent = data.finalOutput || 'No deliverable was produced.';
+  document.getElementById('resultOutput').textContent = JSON.stringify(data, null, 2);
+  document.getElementById('receiptId').textContent = data.executionId;
+  document.getElementById('receiptTotal').textContent = `$${(data.totalPaid || 0).toFixed(3)} USDT`;
+  document.getElementById('receiptAnchor').innerHTML = txLink(data.anchorTxHash);
 
-    // Raw data stays available but tucked away.
-    document.getElementById('resultOutput').textContent = JSON.stringify(data, null, 2);
+  // make it shareable: put the exec id in the URL without reloading
+  try { history.replaceState(null, '', `${location.pathname}?exec=${data.executionId}`); } catch (e) {}
+}
 
-    // Receipt
-    document.getElementById('receiptId').textContent = data.executionId;
-    document.getElementById('receiptTotal').textContent = `${data.totalPaid.toFixed(3)} USDT`;
-    document.getElementById('receiptAnchor').textContent = data.anchorTxHash || '—';
-
-  } catch (e) {
-    showError(`Execution error: ${e.message}`);
-  }
-
-  btn.disabled = false;
-  btn.textContent = '✓ Executed';
+function shareOnX() {
+  if (!currentExecution) return;
+  const url = `${location.origin}${location.pathname}?exec=${currentExecution.executionId}`;
+  const n = currentExecution.completedSteps || 0;
+  const text = `I described a goal and @Bind hired ${n} on-chain AI agent${n===1?'':'s'}, paid each via x402 on @XLayer, verified their work, and handed me one result — with an on-chain receipt.\n\nThe agent economy has a buyer now. 👇`;
+  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener');
+}
+function copyLink() {
+  if (!currentExecution) return;
+  const url = `${location.origin}${location.pathname}?exec=${currentExecution.executionId}`;
+  navigator.clipboard.writeText(url).then(() => toast('Receipt link copied')).catch(() => toast(url));
 }
 
 function resetAll() {
-  currentPlan = null;
-  currentExecution = null;
+  currentPlan = null; currentExecution = null;
   document.getElementById('planSection').classList.remove('visible');
   document.getElementById('resultSection').classList.remove('visible');
-  document.getElementById('execBtn').disabled = false;
-  document.getElementById('execBtn').textContent = 'Execute Plan';
+  document.getElementById('execBtn').disabled = false; document.getElementById('execBtn').innerHTML = '❯ Execute &amp; Pay Agents';
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
 }
+function clearAll() { resetAll(); hideError(); document.getElementById('goal').value = ''; }
 
-function clearAll() {
-  resetAll();
-  hideError();
-  document.getElementById('goal').value = '';
+// Shareable receipts: /bind/app?exec=<id> loads and renders a past execution read-only.
+async function loadFromUrl() {
+  const id = new URLSearchParams(location.search).get('exec');
+  if (!id) return;
+  try {
+    const res = await fetch(`/bind/status/${id}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    document.getElementById('goal').value = data.goal || '';
+    document.getElementById('resultSection').classList.add('visible');
+    renderExecution(data);
+    document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {}
 }
+loadFromUrl();
 </script>
 </body>
 </html>

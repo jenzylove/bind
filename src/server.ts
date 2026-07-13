@@ -78,6 +78,27 @@ app.get("/", (req, res) => {
   });
 });
 
+// Lightweight per-IP rate limit on the AI-backed endpoints. /bind/plan calls Claude on
+// every request (agent routing) and /bind/execute moves money — both are public, so this
+// is a cheap guard against a script running up Anthropic costs or hammering the wallet.
+const hits = new Map<string, { count: number; resetAt: number }>();
+const RL_WINDOW_MS = 10 * 60 * 1000;
+const RL_MAX = 40;
+app.use(["/bind/plan", "/bind/execute"], (req, res, next) => {
+  const ip = (req.headers["x-forwarded-for"] as string || req.ip || "unknown").split(",")[0].trim();
+  const now = Date.now();
+  const rec = hits.get(ip);
+  if (!rec || now > rec.resetAt) {
+    hits.set(ip, { count: 1, resetAt: now + RL_WINDOW_MS });
+  } else if (rec.count >= RL_MAX) {
+    res.status(429).json({ error: "rate_limited", message: "Too many requests — please wait a few minutes." });
+    return;
+  } else {
+    rec.count++;
+  }
+  next();
+});
+
 // Bind — orchestrator routes
 app.use("/bind", bindRouter);
 

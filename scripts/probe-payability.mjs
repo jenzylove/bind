@@ -4,16 +4,32 @@
 // return 402 on a valid payment. Cost is real but tiny (only agents that settle charge).
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 
 const ex = promisify(execFile);
 const BIN = process.env.HOME + "/.local/bin/onchainos";
-const SPEND_CAP = 0.30;          // hard stop once cumulative settled fees exceed this
+const SPEND_CAP = 0.12;          // wallet is low pre-refund — hard stop once cumulative settled fees exceed this
 const FEE_CEILING = 0.02;        // don't probe services pricier than this
 let spent = 0;
 
+// Skip agents we've already probed (successfully or not) — don't re-spend confirming a
+// known reject, and don't waste calls re-verifying a known-payable agent.
+let alreadyProbed = new Set();
+try {
+  const prev = JSON.parse(readFileSync("data/payable-agents.json", "utf8"));
+  alreadyProbed = new Set((prev.all || []).map((a) => a.id));
+} catch {}
+
 function catalog() {
-  const queries = ["A2MCP","security","market","data","defi","social","content","onchain","news","token","trading","nft","ai","price","wallet","analytics"];
+  const queries = [
+    "ai","crypto","trading","market","data","security","audit","news","social",
+    "sentiment","nft","defi","yield","swap","token","price","onchain","wallet",
+    "analytics","signal","research","meme","derivatives","funding","liquidation",
+    "twitter","kol","content","art","game","sports","prediction","health","legal",
+    "credit","payment","bridge","stake","dex","rpc","chart","alert","monitor",
+    "scan","risk","brief","quant","arbitrage","options","stocks","macro","whale",
+    "airdrop","launch","mint","A2MCP",
+  ];
   const seen = new Map();
   for (const q of queries) {
     try {
@@ -83,14 +99,19 @@ async function probe(a) {
   return { ...a, verdict:"rejected-payment", cost:0 };
 }
 
-const agents = catalog();
-console.error(`probing ${agents.length} agents (spend cap $${SPEND_CAP})...`);
+const fullCatalog = catalog();
+const agents = fullCatalog.filter((a) => !alreadyProbed.has(a.id));
+console.error(`catalog: ${fullCatalog.length} total, ${agents.length} new (skipping ${fullCatalog.length - agents.length} already-probed). spend cap $${SPEND_CAP}...`);
 const results = [];
 for (const a of agents) {
   const res = await probe(a);
   results.push(res);
   console.error(`  #${res.id} ${("$"+res.fee).padEnd(9)} ${res.verdict.padEnd(18)} ${res.name}`);
 }
+// Merge with previously-probed results so the output file stays a full historical record.
+let previousAll = [];
+try { previousAll = JSON.parse(readFileSync("data/payable-agents.json", "utf8")).all || []; } catch {}
+const mergedAll = [...previousAll, ...results];
 
 // Data-usable = settled/free AND returned real data AND not an MCP/topup endpoint (those
 // settle but yield no usable one-shot data). This auto-curation is what keeps us from
@@ -102,15 +123,23 @@ function dataUsable(r) {
   if (ep.endsWith("/mcp") || ep.includes("/topup")) return false;
   return true;
 }
-const settled = results.filter(r=>["PAID-SETTLED","free-data","free-200"].includes(r.verdict));
-const usable = results.filter(dataUsable);
+// Carry forward previously-confirmed payable agents (they aren't re-probed this run) and
+// merge in anything new this run found data-usable.
+let previousPayable = [];
+try { previousPayable = JSON.parse(readFileSync("data/payable-agents.json", "utf8")).payable || []; } catch {}
+const newUsable = results.filter(dataUsable);
+const settledThisRun = results.filter(r=>["PAID-SETTLED","free-data","free-200"].includes(r.verdict));
+const usableById = new Map(previousPayable.map(p=>[p.id,p]));
+for (const p of newUsable) usableById.set(p.id, {id:p.id,name:p.name,fee:p.fee,verdict:p.verdict,endpoint:p.endpoint,service:p.service,desc:p.desc});
+const usable = [...usableById.values()];
+
 mkdirSync("data",{recursive:true});
 writeFileSync("data/payable-agents.json", JSON.stringify({
-  probedAt:"2026-07-13", totalProbed:results.length, totalSpent:spent,
-  payableIds: usable.map(p=>p.id),                       // routing set = data-usable only
-  settledButUnusable: settled.filter(r=>!dataUsable(r)).map(p=>({id:p.id,name:p.name,reason:(p.endpoint||"").endsWith("/mcp")?"mcp":(p.endpoint||"").includes("/topup")?"topup":"no-data"})),
-  payable: usable.map(p=>({id:p.id,name:p.name,fee:p.fee,verdict:p.verdict,endpoint:p.endpoint,service:p.service,desc:p.desc})),
-  all: results.map(r=>({id:r.id,name:r.name,fee:r.fee,verdict:r.verdict})),
+  probedAt:"2026-07-13", totalProbedThisRun:results.length, totalProbedAllTime:mergedAll.length, totalSpentThisRun:spent,
+  payableIds: usable.map(p=>p.id),                       // routing set = data-usable, carried forward across runs
+  settledButUnusable: settledThisRun.filter(r=>!dataUsable(r)).map(p=>({id:p.id,name:p.name,reason:(p.endpoint||"").endsWith("/mcp")?"mcp":(p.endpoint||"").includes("/topup")?"topup":"no-data"})),
+  payable: usable,
+  all: mergedAll,
 }, null, 2));
-console.error(`\nDONE. spent $${spent.toFixed(4)}. settled: ${settled.length}, data-usable: ${usable.length}/${results.length}`);
-console.error("data-usable:", usable.map(p=>`#${p.id} ${p.name}`).join(", "));
+console.error(`\nDONE. spent $${spent.toFixed(4)} this run. new-this-run: ${newUsable.length}, total data-usable: ${usable.length}, total probed all-time: ${mergedAll.length}`);
+console.error("data-usable (all-time):", usable.map(p=>`#${p.id} ${p.name}`).join(", "));

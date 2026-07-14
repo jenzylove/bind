@@ -19,22 +19,25 @@ const MAX_TOTAL_USDT = 1.5;          // cap the whole quote
 // usable one-shot data (AlphaHunter #4215 is a non-standard MCP server; Clawby #3209 is
 // a credit-topup, not a data call) — those are excluded. We bias hard to agents that
 // both pay out AND return real data. Loaded from data/payable-agents.json (re-runnable).
-const FALLBACK_PAYABLE = ["2023", "4413", "3417", "3887", "5222"];
-// Settle-but-unusable agents: kept out of the trusted set even if a probe lists them.
-const EXCLUDE_IDS = new Set(["4215", "3209"]); // AlphaHunter (MCP), Clawby (topup)
-function loadPayableIds(): Set<string> {
+const FALLBACK_PAYABLE = ["2023", "4413", "3417", "3887", "5222", "2080", "4380", "3650", "5221", "2567", "2131", "4848"];
+// Settle-but-unusable agents: kept out even if a probe lists them.
+const EXCLUDE_IDS = new Set(["4215", "3209"]); // AlphaHunter (MCP, no REST data), Clawby (topup)
+
+interface PayableEndpoint { endpoint: string; fee: number; service: string; name: string; tier: string; }
+function loadPayable(): { ids: Set<string>; endpoints: Map<string, PayableEndpoint> } {
+  const endpoints = new Map<string, PayableEndpoint>();
   try {
     const dir = process.env.BIND_DATA_DIR ?? "data";
     const raw = JSON.parse(readFileSync(join(dir, "payable-agents.json"), "utf8"));
     const ids = Array.isArray(raw.payableIds) ? raw.payableIds.map(String) : [];
-    // #2023 (OKX-official Onchain Data Explorer) settles on its main services even when
-    // the probe's cheapest sub-endpoint doesn't — always keep it in the trusted set.
-    return new Set<string>([...ids, "2023", ...FALLBACK_PAYABLE].filter((id) => !EXCLUDE_IDS.has(id)));
+    for (const [id, ep] of Object.entries(raw.endpoints ?? {})) endpoints.set(String(id), ep as PayableEndpoint);
+    const set = new Set<string>([...ids, ...FALLBACK_PAYABLE].filter((id) => !EXCLUDE_IDS.has(id)));
+    return { ids: set, endpoints };
   } catch {
-    return new Set<string>(FALLBACK_PAYABLE);
+    return { ids: new Set<string>(FALLBACK_PAYABLE), endpoints };
   }
 }
-const PAYABLE_AGENT_IDS = loadPayableIds();
+const { ids: PAYABLE_AGENT_IDS, endpoints: PAYABLE_ENDPOINTS } = loadPayable();
 
 // An analytical goal ("is this safe", "research X", "sentiment on Y") must never
 // select an agent whose job is to take an action (launch/mint/swap/deploy).
@@ -47,6 +50,18 @@ function isActionAgent(agent: MarketplaceAgent): boolean {
 }
 function cheapestService(agent: MarketplaceAgent): MarketplaceService {
   return agent.services.reduce((a, b) => (a.feeAmount <= b.feeAmount ? a : b));
+}
+// The service Bind will actually call. For a tested-payable agent we pin the exact
+// endpoint the settlement test confirmed works (often NOT the cheapest — a cheaper sibling
+// service is frequently a dead 404). Everyone else falls back to the cheapest service.
+function chosenService(agent: MarketplaceAgent): MarketplaceService {
+  const o = PAYABLE_ENDPOINTS.get(agent.agentId);
+  if (o) {
+    const live = agent.services.find((s) => s.endpoint === o.endpoint);
+    if (live) return live;
+    return { serviceId: "", serviceName: o.service, serviceType: "A2MCP", feeAmount: o.fee, endpoint: o.endpoint, description: "" };
+  }
+  return cheapestService(agent);
 }
 
 function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
@@ -85,7 +100,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   const eligible = scored.filter(({ agent }) => {
     if (agent.services.length === 0) return false;
     if (EXCLUDE_IDS.has(agent.agentId)) return false; // settle-but-unusable (MCP/topup) — never route to these
-    const fee = cheapestService(agent).feeAmount;
+    const fee = chosenService(agent).feeAmount;
     const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
     // Tested-payable agents get the full ceiling; unproven agents are capped low so a
     // pricey gamble (that usually 403s or overcharges) never bloats the quote.
@@ -114,7 +129,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     name: agent.name,
     category: determineAgentRole(agent, req.goal),
     description: agent.description,
-    cheapestFee: cheapestService(agent).feeAmount,
+    cheapestFee: chosenService(agent).feeAmount,
     payable: PAYABLE_AGENT_IDS.has(agent.agentId),
   }));
   const picks = await selectAgents(req.goal, candidates, 4);
@@ -122,7 +137,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     for (const p of picks) {
       const agent = byId.get(p.agentId);
       if (!agent) continue;
-      const fee = cheapestService(agent).feeAmount;
+      const fee = chosenService(agent).feeAmount;
       if (runningTotal + fee > MAX_TOTAL_USDT) continue;
       selectedAgents.push(agent);
       runningTotal += fee;
@@ -134,7 +149,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     const usedRoles = new Set<string>();
     for (const { agent } of eligible) {
       if (selectedAgents.length >= 4) break;
-      const fee = cheapestService(agent).feeAmount;
+      const fee = chosenService(agent).feeAmount;
       if (runningTotal + fee > MAX_TOTAL_USDT) continue;
       const role = determineAgentRole(agent, req.goal);
       const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
@@ -160,7 +175,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   }
 
   const steps: BindStep[] = selectedAgents.map((agent, i) => {
-    const svc = cheapestService(agent);
+    const svc = chosenService(agent);
     // Store the full service description for param inference
     const agentServiceDescription = svc.description || agent.description;
     return {

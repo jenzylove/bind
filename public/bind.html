@@ -158,7 +158,7 @@
   @media (min-width: 960px) { .uc-grid { grid-template-columns: repeat(3, 1fr); } }
   .uc-card { background: var(--navy-light); border: 1px solid var(--navy-border); border-radius: 12px; padding: 19px; cursor: pointer; transition: border-color .15s; }
   .uc-card:hover { border-color: #22d3ee4d; }
-  .uc-card .emoji { font-size: 20px; display: block; margin-bottom: 10px; }
+  .uc-card .uc-tag { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--cyan); opacity: .78; display: block; margin-bottom: 12px; font-weight: 600; }
   .uc-card .t { font-size: 14px; font-weight: 550; margin-bottom: 5px; }
   .uc-card .d { font-size: 12px; color: var(--ivory-muted); opacity: .8; line-height: 1.55; }
 
@@ -207,9 +207,9 @@
         <a class="btn-outline" href="?exec=7fdcf755-e46d-4969-9cca-62878938eb24" style="text-decoration:none;display:flex;align-items:center;justify-content:center">See a real mission →</a>
       </div>
       <div class="chips">
-        <span class="chip" onclick="fillGoal('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">📊 BTC market brief</span>
-        <span class="chip" onclick="fillGoal('What are the widest crypto funding-rate arbitrage opportunities right now?')">💹 Funding arb scan</span>
-        <span class="chip" onclick="fillGoal('What is the current DeFi market landscape — total market cap, dominance, and leading protocols?')">🏦 DeFi macro overview</span>
+        <span class="chip" onclick="fillGoal('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">BTC market brief</span>
+        <span class="chip" onclick="fillGoal('What are the widest crypto funding-rate arbitrage opportunities right now?')">Funding arb scan</span>
+        <span class="chip" onclick="fillGoal('What is the current DeFi market landscape — total market cap, dominance, and leading protocols?')">DeFi macro overview</span>
       </div>
       <div class="error-msg" id="errorMsg"></div>
     </div>
@@ -233,7 +233,7 @@
       <button class="btn-pay" onclick="executePlan()" id="execBtn">Execute mission →</button>
 
       <div class="deliverable" id="deliverableBlock" style="display:none">
-        <p class="eyebrow">✦ Your Deliverable</p>
+        <p class="eyebrow">Your Deliverable</p>
         <div id="deliverable"></div>
       </div>
 
@@ -244,7 +244,7 @@
         <div class="line"><span class="label">Execution ID</span><span class="value" id="receiptId">—</span></div>
         <div class="line"><span class="label">On-chain anchor</span><span class="value" id="receiptAnchor">—</span></div>
         <div class="receipt-links">
-          <button onclick="shareOnX()">𝕏 Share output →</button>
+          <button onclick="shareOnX()">Share on X →</button>
           <button onclick="copyLink()">Copy link →</button>
         </div>
       </div>
@@ -289,28 +289,28 @@
     <h2 class="section-h">What Bind can hire agents for today</h2>
     <div class="uc-grid" id="ucGrid">
       <div class="uc-card" onclick="fillGoal('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">
-        <span class="emoji">📊</span><p class="t">Market Brief</p>
+        <span class="uc-tag">Market</span><p class="t">Market Brief</p>
         <p class="d">Crowd positioning, open interest, and cross-asset comparison synthesized from independent data agents.</p>
       </div>
       <div class="uc-card" onclick="fillGoal('What are the widest crypto funding-rate arbitrage opportunities right now?')">
-        <span class="emoji">💹</span><p class="t">Funding Arbitrage</p>
+        <span class="uc-tag">Derivatives</span><p class="t">Funding Arbitrage</p>
         <p class="d">Scans cross-venue funding-rate spreads to surface the widest arbitrage candidates right now.</p>
       </div>
       <div class="uc-card" onclick="fillGoal('What is the current DeFi market landscape — total market cap, dominance, and leading protocols?')">
-        <span class="emoji">🏦</span><p class="t">DeFi Macro</p>
+        <span class="uc-tag">DeFi</span><p class="t">DeFi Macro</p>
         <p class="d">Aggregate DeFi picture: total market cap, its dominance of crypto, 24h volume, and the leading protocols.</p>
       </div>
-      <div class="uc-card" onclick="fillGoal('Give me the current derivatives positioning across major coins')">
-        <span class="emoji">🎯</span><p class="t">Derivatives Positioning</p>
-        <p class="d">Long/short account ratios and open interest across major coins, flagged for crowded-long or crowded-short risk.</p>
+      <div class="uc-card" onclick="fillGoal('Scan this token for rug-pull risk and contract red flags: 0x779ded0c9e1022225f8e0630b35a9b54be713736')">
+        <span class="uc-tag">Security</span><p class="t">Rug &amp; Risk Scan</p>
+        <p class="d">Independent rug-radar and on-chain contract checks, cross-verified before a verdict is written.</p>
       </div>
       <div class="uc-card" onclick="fillGoal('Give me a daily crypto market briefing')">
-        <span class="emoji">📰</span><p class="t">Daily Briefing</p>
+        <span class="uc-tag">Briefing</span><p class="t">Daily Briefing</p>
         <p class="d">A synthesized daily market thesis pulled from an independent briefing agent, cross-checked against live data.</p>
       </div>
-      <div class="uc-card" onclick="fillGoal('Is token 0x779ded0c9e1022225f8e0630b35a9b54be713736 safe to buy?')">
-        <span class="emoji">🔍</span><p class="t">Token Due Diligence</p>
-        <p class="d">On-chain token info, holders, and contract data — verified before it counts toward the answer.</p>
+      <div class="uc-card" onclick="fillGoal('Give me the current derivatives positioning across major coins')">
+        <span class="uc-tag">On-chain</span><p class="t">Derivatives Positioning</p>
+        <p class="d">Long/short account ratios and open interest across major coins, flagged for crowded-long or crowded-short risk.</p>
       </div>
     </div>
   </section>
@@ -568,7 +568,7 @@ function shareOnX() {
   if (!currentExecution) return;
   const url = `${location.origin}${location.pathname}?exec=${currentExecution.executionId}`;
   const n = currentExecution.completedSteps || 0;
-  const text = `I described a goal and Bind hired ${n} on-chain AI agent${n===1?'':'s'}, paid each via x402 on X Layer, verified their work, and handed me one result — with an on-chain receipt.\n\nThe agent economy has a buyer now. 👇`;
+  const text = `I described a goal and Bind hired ${n} on-chain AI agent${n===1?'':'s'}, paid each via x402 on X Layer, verified their work, and handed me one result — with an on-chain receipt.\n\nThe agent economy has a buyer now.`;
   window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener');
 }
 function copyLink() {

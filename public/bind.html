@@ -16,8 +16,8 @@
     /* Night-ledger edition of the broadsheet identity: midnight navy ground,
        parchment text, aged-gilt + wax-oxblood accents. --cyan token is repurposed
        as gilt-gold so the whole token-driven UI reskins at once. */
-    --navy: #0b0d17; --navy-light: #13141f; --navy-border: #272633;
-    --ivory: #e8dfca; --ivory-muted: #a89e85; --ivory-dim: #6b6553;
+    --navy: #16120b; --navy-light: #1e1810; --navy-border: #33291b;
+    --ivory: #e8dfca; --ivory-muted: #aba085; --ivory-dim: #786c54;
     --cyan: #c8a45a; --cyan-dim: #c8a45a12; --cyan-border: #c8a45a33;
     --red: #c76a58; --emerald: #8aa870; --amber: #d3ad55;
     --oxblood: #b3574a; --paper: #e7ddc7; --paper-ink: #211a12;
@@ -68,6 +68,19 @@
   .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
   .chip { font-size: 12px; color: var(--ivory-muted); background: var(--navy-light); border: 1px solid var(--navy-border); border-radius: 999px; padding: 6px 12px; cursor: pointer; transition: .15s; }
   .chip:hover { color: var(--cyan); border-color: #c8a45a4d; }
+
+  /* hero CTA (marketing landing — no input box here) */
+  .hero-cta { display: flex; gap: 12px; justify-content: center; margin-top: 42px; flex-wrap: wrap; }
+  .hero-cta .btn-cyan { flex: none; padding: 15px 36px; font-size: 15px; }
+  .hero-cta .btn-outline { text-decoration: none; display: inline-flex; align-items: center; padding: 15px 24px; }
+
+  /* dashboard (reached via the CTA) */
+  .app-bar { display: flex; align-items: center; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--navy-border); }
+  .app-back { background: none; border: 1px solid var(--navy-border); color: var(--ivory-muted); font-family: var(--sans); font-size: 13px; padding: 8px 15px; border-radius: 9px; cursor: pointer; transition: .15s; }
+  .app-back:hover { color: var(--ivory); border-color: var(--cyan); }
+  .app-title { font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--ivory-dim); }
+  .app-inner { padding: 34px 0 80px; }
+  .goal-label { display: block; font-size: 13px; letter-spacing: .3px; color: var(--ivory-muted); margin: 0 auto 12px; max-width: 900px; }
 
   .error-msg { max-width: 560px; margin: 16px auto 0; background: #f8717112; border: 1px solid #f8717133; border-radius: 10px; padding: 12px 14px; color: var(--red); font-size: 13px; display: none; }
   .error-msg.visible { display: block; }
@@ -189,85 +202,30 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand"><div class="dot-ring"><div class="dot"></div></div><span>Bind</span></div>
+    <div class="brand" onclick="closeApp()" style="cursor:pointer"><div class="dot-ring"><div class="dot"></div></div><span>Bind</span></div>
     <nav class="top-nav">
-      <a href="#how">How it works</a>
-      <a href="#use-cases">Use cases</a>
+      <a href="#how" onclick="closeApp();document.getElementById('how').scrollIntoView({behavior:'smooth'});return false">How it works</a>
+      <a href="#use-cases" onclick="closeApp();document.getElementById('use-cases').scrollIntoView({behavior:'smooth'});return false">Use cases</a>
       <button id="walletBtn" class="nav-cta" onclick="connectWallet()" style="cursor:pointer;background:none;font-family:inherit">Connect wallet</button>
     </nav>
   </header>
 
+  <div id="landing">
   <section class="hero" id="top">
     <div class="pill"><span class="pip"></span> Powered by OKX AI · X Layer</div>
     <h1 class="headline">The general contractor for the agent economy.</h1>
     <p class="sub">Hand Bind a goal. It commissions a vetted crew of on-chain agents from the OKX marketplace, pays each via x402, inspects every output, and delivers one finished result — with an on-chain receipt for every payment. You never pay for work that fails verification.</p>
 
-    <div class="goal-card">
-      <div class="goal-box" id="inputArea">
-        <textarea id="goal" placeholder="What do you want to accomplish?">Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment</textarea>
-      </div>
-      <div class="goal-actions">
-        <button class="btn-cyan" onclick="createPlan()" id="planBtn">Plan workflow</button>
-        <a class="btn-outline" href="?exec=7fdcf755-e46d-4969-9cca-62878938eb24" style="text-decoration:none;display:flex;align-items:center;justify-content:center">See a real mission →</a>
-      </div>
-      <div class="chips">
-        <span class="chip" onclick="fillGoal('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">BTC market brief</span>
-        <span class="chip" onclick="fillGoal('What are the widest crypto funding-rate arbitrage opportunities right now?')">Funding arb scan</span>
-        <span class="chip" onclick="fillGoal('What is the current DeFi market landscape — total market cap, dominance, and leading protocols?')">DeFi macro overview</span>
-      </div>
-      <div class="error-msg" id="errorMsg"></div>
+    <div class="hero-cta">
+      <button class="btn-cyan" onclick="openApp()">Start a mission →</button>
+      <a class="btn-outline" href="?exec=7fdcf755-e46d-4969-9cca-62878938eb24">See a real mission →</a>
+    </div>
+    <div class="chips" style="justify-content:center;max-width:560px;margin:18px auto 0">
+      <span class="chip" onclick="openApp('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">BTC market brief</span>
+      <span class="chip" onclick="openApp('What are the widest crypto funding-rate arbitrage opportunities right now?')">Funding arb scan</span>
+      <span class="chip" onclick="openApp('What is the current DeFi market landscape — total market cap, dominance, and leading protocols?')">DeFi macro overview</span>
     </div>
   </section>
-
-  <!-- Mission console: plan + live execution -->
-  <div class="console" id="consoleSection">
-    <div class="console-main">
-      <p class="eyebrow" id="consoleEyebrow">Mission plan</p>
-
-      <div class="plan-block" id="planBlock">
-        <div class="plan-goal-row">
-          <span class="goal-text" id="planGoalText"></span>
-          <span class="price" id="totalPrice">$0.000 <small>USDT</small></span>
-        </div>
-        <p class="plan-meta" id="planMeta"></p>
-      </div>
-
-      <div class="steps" id="steps"></div>
-
-      <button class="btn-pay" onclick="executePlan()" id="execBtn">Execute mission →</button>
-
-      <div class="deliverable" id="deliverableBlock" style="display:none">
-        <p class="eyebrow">Your Deliverable</p>
-        <div id="deliverable"></div>
-      </div>
-
-      <div class="receipt" id="receiptBlock" style="display:none">
-        <div class="line"><span class="label">Goal</span><span class="value" id="receiptGoal">—</span></div>
-        <div class="line"><span class="label">Agents used</span><span class="value" id="receiptAgents">—</span></div>
-        <div class="line"><span class="label">Total cost</span><span class="value" id="receiptTotal">0 USDT</span></div>
-        <div class="line"><span class="label">Execution ID</span><span class="value" id="receiptId">—</span></div>
-        <div class="line"><span class="label">On-chain anchor</span><span class="value" id="receiptAnchor">—</span></div>
-        <div class="receipt-links">
-          <button onclick="shareOnX()">Share on X →</button>
-          <button onclick="copyLink()">Copy link →</button>
-        </div>
-      </div>
-
-      <details class="raw">
-        <summary>Raw execution data</summary>
-        <div class="raw-output" id="resultOutput"></div>
-      </details>
-
-      <button class="start-over" onclick="resetAll()">← Start a new mission</button>
-    </div>
-
-    <div class="console-log">
-      <p class="log-head">Execution log</p>
-      <div class="log-body" id="logBody">
-        <p class="log-empty">Describe a goal and plan a workflow to start.</p>
-      </div>
-    </div>
-  </div>
 
   <section class="how" id="how">
     <p class="section-eyebrow">How it works</p>
@@ -323,10 +281,72 @@
     <div>Bind · Powered by OKX AI · Built on X Layer</div>
     <div class="foot-links">
       <a href="https://github.com/jenzylove/bind" target="_blank" rel="noopener">GitHub</a>
-      <a href="#top">App</a>
+      <a href="#" onclick="openApp();return false">Launch app</a>
     </div>
   </footer>
-</div>
+  </div><!-- /landing -->
+
+  <!-- Dashboard: reached by the CTA; this is where a mission is composed and run -->
+  <div id="app" style="display:none">
+    <div class="app-bar">
+      <button class="app-back" onclick="closeApp()">← Home</button>
+      <span class="app-title">New mission</span>
+    </div>
+    <div class="app-inner">
+      <div class="goal-card" style="max-width:900px;margin:0 auto">
+        <label class="goal-label">What do you want to accomplish?</label>
+        <div class="goal-box" id="inputArea">
+          <textarea id="goal" placeholder="e.g. Give me a market brief on Bitcoin: positioning, funding, and sentiment"></textarea>
+        </div>
+        <div class="goal-actions">
+          <button class="btn-cyan" onclick="createPlan()" id="planBtn">Plan workflow</button>
+          <a class="btn-outline" href="?exec=7fdcf755-e46d-4969-9cca-62878938eb24" style="text-decoration:none;display:flex;align-items:center;justify-content:center">See a real mission →</a>
+        </div>
+        <div class="error-msg" id="errorMsg"></div>
+      </div>
+
+      <div class="console" id="consoleSection">
+        <div class="console-main">
+          <p class="eyebrow" id="consoleEyebrow">Mission plan</p>
+          <div class="plan-block" id="planBlock">
+            <div class="plan-goal-row">
+              <span class="goal-text" id="planGoalText"></span>
+              <span class="price" id="totalPrice">$0.000 <small>USDT</small></span>
+            </div>
+            <p class="plan-meta" id="planMeta"></p>
+          </div>
+          <div class="steps" id="steps"></div>
+          <button class="btn-pay" onclick="executePlan()" id="execBtn">Execute mission →</button>
+          <div class="deliverable" id="deliverableBlock" style="display:none">
+            <p class="eyebrow">Your Deliverable</p>
+            <div id="deliverable"></div>
+          </div>
+          <div class="receipt" id="receiptBlock" style="display:none">
+            <div class="line"><span class="label">Goal</span><span class="value" id="receiptGoal">—</span></div>
+            <div class="line"><span class="label">Agents used</span><span class="value" id="receiptAgents">—</span></div>
+            <div class="line"><span class="label">Total cost</span><span class="value" id="receiptTotal">0 USDT</span></div>
+            <div class="line"><span class="label">Execution ID</span><span class="value" id="receiptId">—</span></div>
+            <div class="line"><span class="label">On-chain anchor</span><span class="value" id="receiptAnchor">—</span></div>
+            <div class="receipt-links">
+              <button onclick="shareOnX()">Share on X →</button>
+              <button onclick="copyLink()">Copy link →</button>
+            </div>
+          </div>
+          <details class="raw">
+            <summary>Raw execution data</summary>
+            <div class="raw-output" id="resultOutput"></div>
+          </details>
+          <button class="start-over" onclick="resetAll()">← Start a new mission</button>
+        </div>
+        <div class="console-log">
+          <p class="log-head">Execution log</p>
+          <div class="log-body" id="logBody">
+            <p class="log-empty">Describe a goal and plan a workflow to start.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -403,7 +423,21 @@ async function waitForReceipt(txHash) {
   }
 }
 
-function fillGoal(t) { document.getElementById('goal').value = t; window.scrollTo({top:0,behavior:'smooth'}); }
+function openApp(goal) {
+  document.getElementById('landing').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  if (goal) document.getElementById('goal').value = goal;
+  window.scrollTo({ top: 0 });
+  setTimeout(() => document.getElementById('goal').focus(), 60);
+}
+function closeApp() {
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('landing').style.display = 'block';
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  window.scrollTo({ top: 0 });
+}
+// Use-case cards and chips open the dashboard pre-filled.
+function fillGoal(t) { openApp(t); }
 function showError(m) { const e = document.getElementById('errorMsg'); e.textContent = m; e.classList.add('visible'); }
 function hideError() { document.getElementById('errorMsg').classList.remove('visible'); }
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1900); }
@@ -453,7 +487,9 @@ async function createPlan() {
     currentPlan = data.plan;
     document.getElementById('planGoalText').textContent = `"${goal.length > 60 ? goal.slice(0,60)+'…' : goal}"`;
     document.getElementById('totalPrice').innerHTML = `$${data.plan.totalPriceUsdt.toFixed(3)} <small>USDT</small>`;
-    document.getElementById('planMeta').textContent = `${data.plan.steps.length} specialists · flat rate · free to try during launch`;
+    document.getElementById('planMeta').innerHTML = (data.plan.agentCost != null)
+      ? `${data.plan.steps.length} specialists · agents $${data.plan.agentCost.toFixed(3)} + Bind fee $${(data.plan.platformFee||0).toFixed(3)}`
+      : `${data.plan.steps.length} specialists · flat rate`;
 
     const steps = document.getElementById('steps');
     steps.innerHTML = '';
@@ -598,7 +634,7 @@ async function loadFromUrl() {
     const res = await fetch(`/bind/status/${id}`);
     if (!res.ok) return;
     const data = await res.json();
-    document.getElementById('goal').value = data.goal || '';
+    openApp(data.goal || '');   // a shared receipt link lands straight in the dashboard
     currentPlan = { goal: data.goal, steps: (data.stepResults||[]).map(s=>({step:s.step, agent:{name:s.agentName, feeAmount:0}})), totalPriceUsdt: data.totalPaid };
     document.getElementById('planGoalText').textContent = `"${(data.goal||'').slice(0,60)}"`;
     document.getElementById('totalPrice').innerHTML = `$${(data.totalPaid||0).toFixed(3)} <small>USDT</small>`;

@@ -201,15 +201,24 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     agentName: s.agent.name,
     fee: s.agent.feeAmount,
   }));
-  const totalPriceUsdt = steps.reduce((sum, s) => sum + s.agent.feeAmount, 0);
+  // Bind's revenue: a small platform fee on top of what the agents charge — 2% + a $0.03
+  // flat commission (a pure % of cent-sized jobs would round to nothing). The buyer pays
+  // agentCost + platformFee to Bind; Bind pays the agents and keeps the fee.
+  const agentCost = round6(steps.reduce((sum, s) => sum + s.agent.feeAmount, 0));
+  const platformFee = round6(agentCost * 0.02 + 0.03);
+  const totalPriceUsdt = round6(agentCost + platformFee);
 
   return {
     planId: randomUUID(),
     goal: req.goal,
     steps,
+    agentCost,
+    platformFee,
     totalPriceUsdt,
     priceBreakdown,
     estimatedTime: `~${steps.length * 15} seconds`,
     createdAt: new Date().toISOString(),
   };
 }
+
+function round6(n: number): number { return Math.round(n * 1e6) / 1e6; }

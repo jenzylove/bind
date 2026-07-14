@@ -28,6 +28,8 @@ export interface BindPlan {
   goal: string;
   steps: BindStep[];
   totalPriceUsdt: number;
+  agentCost?: number;
+  platformFee?: number;
   priceBreakdown: { agentName: string; fee: number; }[];
   estimatedTime: string;
   createdAt: string;

@@ -169,10 +169,21 @@ function readChallengeCost(challengeB64: string): { usdt: number; asset: string 
 
 // Runs a single step: pick params (proven map, else infer from the service description),
 // call the agent, pay if it returns 402, and verify the payment actually settled.
+// Substitutes $TOKEN (a token address in the goal, else USDT) and $GOAL into a bound
+// params template confirmed by the settlement test.
+function fillBoundParams(tpl: Record<string, string>, goal: string): Record<string, unknown> {
+  const addr = goal.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? USDT_ASSET_LC;
+  const body: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(tpl)) body[k] = v.replace(/\$TOKEN/g, addr).replace(/\$GOAL/g, goal);
+  return body;
+}
+
 async function callAgent(step: BindStep, goal: string): Promise<CallResult> {
   const endpoint = step.agent.endpoint;
-  const known = getParams(endpoint, goal);
-  const { body, method } = known ?? await inferParams(step.agent.serviceName, step.agentServiceDescription ?? "", endpoint, goal);
+  // Prefer the exact, tested params for this agent; then the proven hardcoded map; then infer.
+  const { body, method } = step.boundParams
+    ? { body: fillBoundParams(step.boundParams, goal), method: "POST" as const }
+    : getParams(endpoint, goal) ?? await inferParams(step.agent.serviceName, step.agentServiceDescription ?? "", endpoint, goal);
 
   let res = await httpCall(method, endpoint, body);
   if (res.status === 405 && method === "POST") res = await httpCall("GET", endpoint, null);

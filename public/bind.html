@@ -214,7 +214,7 @@
   <section class="hero" id="top">
     <div class="pill"><span class="pip"></span> Powered by OKX AI · X Layer</div>
     <h1 class="headline">The general contractor for the agent economy.</h1>
-    <p class="sub">Hand Bind a goal. It commissions a vetted crew of on-chain agents from the OKX marketplace, pays each via x402, inspects every output, and delivers one finished result — with an on-chain receipt for every payment. You never pay for work that fails verification.</p>
+    <p class="sub">Hand Bind a goal. It commissions a vetted crew of on-chain agents from the OKX marketplace, pays each via x402, inspects every output, and delivers one finished result — with an on-chain receipt for every payment. Only work that passes verification makes it into your result.</p>
 
     <div class="hero-cta">
       <button class="btn-cyan" onclick="openApp()">Start a mission →</button>
@@ -320,6 +320,7 @@
           <div class="deliverable" id="deliverableBlock" style="display:none">
             <p class="eyebrow">Your Deliverable</p>
             <div id="deliverable"></div>
+            <div id="deliverableNote" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--navy-border);font-size:12px;color:var(--ivory-dim);"></div>
           </div>
           <div class="receipt" id="receiptBlock" style="display:none">
             <div class="line"><span class="label">Goal</span><span class="value" id="receiptGoal">—</span></div>
@@ -438,6 +439,12 @@ function closeApp() {
 }
 // Use-case cards and chips open the dashboard pre-filled.
 function fillGoal(t) { openApp(t); }
+
+const CAP_LABELS = {
+  security: 'Security & risk scan', market_data: 'Market data & positioning', sentiment: 'Sentiment & news',
+  defi: 'DeFi analytics', onchain: 'On-chain data', analysis: 'Analysis', content: 'Content', general: 'Specialist agent',
+};
+function capLabel(cat) { return CAP_LABELS[cat] || 'Specialist agent'; }
 function showError(m) { const e = document.getElementById('errorMsg'); e.textContent = m; e.classList.add('visible'); }
 function hideError() { document.getElementById('errorMsg').classList.remove('visible'); }
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1900); }
@@ -491,6 +498,8 @@ async function createPlan() {
       ? `${data.plan.steps.length} specialists · agents $${data.plan.agentCost.toFixed(3)} + Bind fee $${(data.plan.platformFee||0).toFixed(3)}`
       : `${data.plan.steps.length} specialists · flat rate`;
 
+    // Show capabilities, not vendor names/prices — the crew is Bind's to assemble, not a
+    // shopping list to copy. Real agent identities + tx proof appear after payment.
     const steps = document.getElementById('steps');
     steps.innerHTML = '';
     data.plan.steps.forEach((step) => {
@@ -498,8 +507,8 @@ async function createPlan() {
         <div class="step-row" data-step="${step.step}">
           <span class="step-dot"></span>
           <div class="step-info">
-            <div class="name">${step.agent.name}</div>
-            <div class="detail">${step.agent.serviceName || step.agent.category} · $${step.agent.feeAmount.toFixed(3)}</div>
+            <div class="name">${capLabel(step.agent.category)}</div>
+            <div class="detail">Vetted specialist · verified before it counts</div>
           </div>
         </div>`;
     });
@@ -591,6 +600,11 @@ async function renderExecution(data, rows) {
   const delivBlock = document.getElementById('deliverableBlock');
   delivBlock.style.display = 'block';
   document.getElementById('deliverable').textContent = data.finalOutput || 'No deliverable was produced.';
+  const passed = data.completedSteps || 0;
+  const failed = (data.totalSteps || 0) - passed;
+  document.getElementById('deliverableNote').textContent =
+    `Synthesized from ${passed} verified output${passed===1?'':'s'}.` +
+    (failed > 0 ? ` ${failed} agent${failed===1?'':'s'} failed inspection and ${failed===1?'was':'were'} excluded — only verified work is above.` : ' Every agent passed inspection.');
 
   const receiptBlock = document.getElementById('receiptBlock');
   receiptBlock.style.display = 'block';

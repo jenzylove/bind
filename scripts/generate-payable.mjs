@@ -30,6 +30,21 @@ for (const r of settle.results) {
   });
 }
 
+// Agents unlocked by grow-crew.mjs — the settlement errors revealed their required field.
+// $TOKEN / $GOAL are substituted by the executor at call time. Promotes them to data-confirmed.
+const PARAMS = {
+  "2135": { username: "VitalikButerin" },
+  "4759": { ids: "bitcoin,ethereum,solana" },
+  "3808": { payload: "$TOKEN" },
+  "4502": { agent: "2023" },
+  "3868": { agent: "2023" },
+  "3824": { prompt: "$GOAL" },
+  "4159": { text: "$GOAL" },
+};
+for (const a of map.values()) {
+  if (PARAMS[a.id]) { a.tier = "data"; a.params = PARAMS[a.id]; }
+}
+
 const all = [...map.values()];
 const data = all.filter(a => a.tier === "data");
 const capable = all.filter(a => a.tier === "capable");
@@ -44,7 +59,7 @@ writeFileSync("data/payable-agents.json", JSON.stringify({
   dataConfirmed: data.length,
   paymentCapable: capable.length,
   payableIds: data.map(a => a.id),
-  endpoints: Object.fromEntries(data.map(a => [a.id, { endpoint: a.endpoint, fee: a.fee, service: a.service, name: a.name, tier: a.tier }])),
+  endpoints: Object.fromEntries(data.map(a => [a.id, { endpoint: a.endpoint, fee: a.fee, service: a.service, name: a.name, tier: a.tier, params: a.params || null }])),
   needsParams: capable.map(a => ({ id: a.id, name: a.name, endpoint: a.endpoint, fee: a.fee, service: a.service })),
   agents: all,
 }, null, 2));

@@ -17,6 +17,10 @@ export interface BindStep {
   agent: BindAgent;
   agentServiceDescription?: string;
   inputTemplate: Record<string, string>;
+  // Exact request body for a tested agent (from payable-agents.json). Values may contain
+  // $TOKEN / $GOAL placeholders the executor substitutes at call time. When present, the
+  // executor uses this verbatim instead of guessing params.
+  boundParams?: Record<string, string>;
   verificationType: "data" | "content" | "code";
   verificationCriteria?: string;
   fallbackAgent?: BindAgent;

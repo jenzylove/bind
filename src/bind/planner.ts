@@ -23,7 +23,7 @@ const FALLBACK_PAYABLE = ["2023", "4413", "3417", "3887", "5222", "2080", "4380"
 // Settle-but-unusable agents: kept out even if a probe lists them.
 const EXCLUDE_IDS = new Set(["4215", "3209"]); // AlphaHunter (MCP, no REST data), Clawby (topup)
 
-interface PayableEndpoint { endpoint: string; fee: number; service: string; name: string; tier: string; }
+interface PayableEndpoint { endpoint: string; fee: number; service: string; name: string; tier: string; params?: Record<string, string> | null; }
 function loadPayable(): { ids: Set<string>; endpoints: Map<string, PayableEndpoint> } {
   const endpoints = new Map<string, PayableEndpoint>();
   try {
@@ -191,6 +191,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
         category: determineAgentRole(agent, req.goal) as any,
       },
       agentServiceDescription,
+      boundParams: PAYABLE_ENDPOINTS.get(agent.agentId)?.params ?? undefined,
       inputTemplate: { q: req.goal },
       verificationType: "data",
       verificationCriteria: "Agent returned structured output",

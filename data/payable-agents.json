@@ -1,7 +1,7 @@
 {
   "probedAt": "2026-07-13",
   "note": "payableIds/endpoints = DATA-CONFIRMED agents only (return usable data). needsParams = settle but reject our params; require per-agent param work before routing.",
-  "dataConfirmed": 19,
+  "dataConfirmed": 14,
   "paymentCapable": 15,
   "payableIds": [
     "2023",
@@ -9,20 +9,15 @@
     "3417",
     "3887",
     "5222",
-    "2135",
     "4759",
     "3808",
-    "4502",
-    "3868",
     "2080",
     "4380",
     "3650",
-    "3824",
     "5221",
     "2567",
     "2131",
-    "4848",
-    "4159"
+    "4848"
   ],
   "endpoints": {
     "2023": {
@@ -48,16 +43,6 @@
       "name": "Pool Radar Agent",
       "tier": "data",
       "params": null
-    },
-    "2135": {
-      "endpoint": "https://x402.6551.io/okx/twitter_user_info",
-      "fee": 0.002,
-      "service": "OpenNews Twitter User Info",
-      "name": "Newsliquid",
-      "tier": "data",
-      "params": {
-        "username": "VitalikButerin"
-      }
     },
     "2567": {
       "endpoint": "https://smart-money-edge.diwymr1.workers.dev/okx-mcp",
@@ -88,30 +73,7 @@
       "fee": 0.01,
       "service": "Payload Security Scan",
       "name": "Warden",
-      "tier": "data",
-      "params": {
-        "payload": "$TOKEN"
-      }
-    },
-    "3824": {
-      "endpoint": "https://direct-api-jp.lylshien.com/okx-mcp/mcp",
-      "fee": 0.05,
-      "service": "链上研究资料解析器",
-      "name": "链上研究解析助手",
-      "tier": "data",
-      "params": {
-        "prompt": "$GOAL"
-      }
-    },
-    "3868": {
-      "endpoint": "https://factor-credit-check-madhavgupta28s-projects.vercel.app/credit-check",
-      "fee": 0.01,
-      "service": "credit-check",
-      "name": "Factor Credit Bureau",
-      "tier": "data",
-      "params": {
-        "agent": "2023"
-      }
+      "tier": "data"
     },
     "3887": {
       "endpoint": "https://chuanyue-briefing-asp.vercel.app/api/sample-briefing",
@@ -120,16 +82,6 @@
       "name": "穿越牛熊简报",
       "tier": "data",
       "params": null
-    },
-    "4159": {
-      "endpoint": "https://audiobook-tts-asp.vercel.app/api/text-to-speech",
-      "fee": 0.1,
-      "service": "中文文本转语音",
-      "name": "AudioForge Agent",
-      "tier": "data",
-      "params": {
-        "text": "$GOAL"
-      }
     },
     "4380": {
       "endpoint": "https://optic-production-5675.up.railway.app/v1/rug",
@@ -147,25 +99,12 @@
       "tier": "data",
       "params": null
     },
-    "4502": {
-      "endpoint": "https://factor-credit-check.vercel.app/credit-check",
-      "fee": 0.01,
-      "service": "credit-desk",
-      "name": "Factor Credit Desk",
-      "tier": "data",
-      "params": {
-        "agent": "2023"
-      }
-    },
     "4759": {
       "endpoint": "https://keryxhq.xyz/api/okxasp/tools/crypto-price",
       "fee": 0.002,
-      "service": "Live Crypto Price Feed",
+      "service": "Crypto Price Feed",
       "name": "Keryx Finance Copilot",
-      "tier": "data",
-      "params": {
-        "ids": "bitcoin,ethereum,solana"
-      }
+      "tier": "data"
     },
     "4848": {
       "endpoint": "https://usstocksite.vercel.app/api/catalyst-radar",
@@ -297,6 +236,46 @@
       "endpoint": "https://okx-ai-a2mcp-endpoint-tester.vercel.app/api/agent-trust-layer",
       "fee": 0.1,
       "service": "Agent Trust Review"
+    },
+    {
+      "id": "2135",
+      "name": "Newsliquid",
+      "endpoint": "https://x402.6551.io/okx/twitter_user_info",
+      "fee": 0.002,
+      "service": "OpenNews Twitter User Info",
+      "note": "works but off-topic for current demos"
+    },
+    {
+      "id": "4502",
+      "name": "Factor Credit Desk",
+      "endpoint": "https://factor-credit-check.vercel.app/credit-check",
+      "fee": 0.01,
+      "service": "credit-desk",
+      "note": "works but off-topic for current demos"
+    },
+    {
+      "id": "3868",
+      "name": "Factor Credit Bureau",
+      "endpoint": "https://factor-credit-check-madhavgupta28s-projects.vercel.app/credit-check",
+      "fee": 0.01,
+      "service": "credit-check",
+      "note": "works but off-topic for current demos"
+    },
+    {
+      "id": "3824",
+      "name": "链上研究解析助手",
+      "endpoint": "https://direct-api-jp.lylshien.com/okx-mcp/mcp",
+      "fee": 0.05,
+      "service": "链上研究资料解析器",
+      "note": "works but off-topic for current demos"
+    },
+    {
+      "id": "4159",
+      "name": "AudioForge Agent",
+      "endpoint": "https://audiobook-tts-asp.vercel.app/api/text-to-speech",
+      "fee": 0.1,
+      "service": "中文文本转语音",
+      "note": "works but off-topic for current demos"
     }
   ],
   "agents": [

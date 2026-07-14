@@ -125,6 +125,17 @@ function getParams(endpoint: string, goal: string): { body: Record<string, unkno
   if (e.includes("barker_yield_advisor")) return { body: { limit: 5 }, method: "POST" };
   if (e.includes("barker_pool_search")) return { body: { q: goal }, method: "POST" };
   if (e.includes("barker_pool_detail") || e.includes("barker_pool_history")) return { body: { poolUid: "" }, method: "POST" };
+  // Warden (Agent 3808) — payload security scan. Params learned from its 422 error.
+  if (e.includes("warden") && e.includes("scan")) {
+    const addr = goal.match(/0x[a-fA-F0-9]{40}/)?.[0];
+    return { body: { payload: addr ?? goal }, method: "POST" };
+  }
+  // Keryx (Agent 4759) — crypto price feed; wants comma-separated ids.
+  if (e.includes("keryx") || e.includes("crypto-price")) {
+    const g = goal.toLowerCase();
+    const ids = ["bitcoin", "ethereum", "solana", "bnb", "xrp", "dogecoin"].filter((c) => g.includes(c) || g.includes(c.slice(0, 3)));
+    return { body: { ids: (ids.length ? ids : ["bitcoin", "ethereum", "solana"]).join(",") }, method: "POST" };
+  }
   // Unknown endpoint — let inferParams read the service description instead.
   return null;
 }

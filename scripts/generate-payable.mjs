@@ -34,13 +34,18 @@ const all = [...map.values()];
 const data = all.filter(a => a.tier === "data");
 const capable = all.filter(a => a.tier === "capable");
 
+// ROUTING RULE: only data-confirmed agents are routed to. Payment-capable agents settle
+// but don't return usable data with inferred params (conversion-test: 0/22), so routing to
+// them would charge the buyer for nothing. They're kept as a backlog for per-agent param
+// engineering, NOT in payableIds.
 writeFileSync("data/payable-agents.json", JSON.stringify({
   probedAt: "2026-07-13",
-  note: "payableIds = data-confirmed + payment-capable. endpoints[] pins the WORKING service per agent (planner uses this, not cheapest).",
+  note: "payableIds/endpoints = DATA-CONFIRMED agents only (return usable data). needsParams = settle but reject our params; require per-agent param work before routing.",
   dataConfirmed: data.length,
   paymentCapable: capable.length,
-  payableIds: all.map(a => a.id),
-  endpoints: Object.fromEntries(all.map(a => [a.id, { endpoint: a.endpoint, fee: a.fee, service: a.service, name: a.name, tier: a.tier }])),
+  payableIds: data.map(a => a.id),
+  endpoints: Object.fromEntries(data.map(a => [a.id, { endpoint: a.endpoint, fee: a.fee, service: a.service, name: a.name, tier: a.tier }])),
+  needsParams: capable.map(a => ({ id: a.id, name: a.name, endpoint: a.endpoint, fee: a.fee, service: a.service })),
   agents: all,
 }, null, 2));
 

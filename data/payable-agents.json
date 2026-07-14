@@ -1,6 +1,6 @@
 {
   "probedAt": "2026-07-13",
-  "note": "payableIds = data-confirmed + payment-capable. endpoints[] pins the WORKING service per agent (planner uses this, not cheapest).",
+  "note": "payableIds/endpoints = DATA-CONFIRMED agents only (return usable data). needsParams = settle but reject our params; require per-agent param work before routing.",
   "dataConfirmed": 12,
   "paymentCapable": 22,
   "payableIds": [
@@ -9,35 +9,13 @@
     "3417",
     "3887",
     "5222",
-    "2180",
-    "2118",
-    "4215",
-    "4153",
-    "2135",
-    "4759",
-    "3255",
-    "3894",
-    "3808",
-    "3598",
-    "4338",
-    "3884",
-    "4502",
-    "3868",
-    "2084",
     "2080",
     "4380",
     "3650",
-    "4045",
-    "3824",
     "5221",
     "2567",
     "2131",
-    "4674",
-    "4848",
-    "4490",
-    "4159",
-    "4451",
-    "4453"
+    "4848"
   ],
   "endpoints": {
     "2023": {
@@ -54,40 +32,12 @@
       "name": "MarketBrew Stock Agent",
       "tier": "data"
     },
-    "2084": {
-      "endpoint": "https://aitoday.xin/dragon-mcp/package",
-      "fee": 0.01,
-      "service": "API-to-x402 Packaging Service",
-      "name": "Dragon PayKit",
-      "tier": "capable"
-    },
-    "2118": {
-      "endpoint": "https://xlayer.ottoai.services/yield-watch",
-      "fee": 0.001,
-      "service": "Otto Yield Watch",
-      "name": "Otto AI",
-      "tier": "capable"
-    },
     "2131": {
       "endpoint": "https://pool-radar-api.vercel.app/alerts/preview",
       "fee": 0.1,
       "service": "多链池子信号推送",
       "name": "Pool Radar Agent",
       "tier": "data"
-    },
-    "2135": {
-      "endpoint": "https://x402.6551.io/okx/twitter_user_info",
-      "fee": 0.002,
-      "service": "OpenNews Twitter User Info",
-      "name": "Newsliquid",
-      "tier": "capable"
-    },
-    "2180": {
-      "endpoint": "https://x402.misteye.io/okx/x402/detect",
-      "fee": 0.0001,
-      "service": "MistEye Security Gate Scan",
-      "name": "MistEye",
-      "tier": "capable"
     },
     "2567": {
       "endpoint": "https://smart-money-edge.diwymr1.workers.dev/okx-mcp",
@@ -96,26 +46,12 @@
       "name": "EdgePulse CN",
       "tier": "data"
     },
-    "3255": {
-      "endpoint": "https://api.wokey.ai/agent/messages",
-      "fee": 0.01,
-      "service": "Pay-per-call AI Services",
-      "name": "Wokey.AI 中转站",
-      "tier": "capable"
-    },
     "3417": {
       "endpoint": "https://api.algovault.com/a2mcp/scan_funding_arb",
       "fee": 0.01,
       "service": "Funding-Rate Spread Scan",
       "name": "AlgoVault Quant Signal",
       "tier": "data"
-    },
-    "3598": {
-      "endpoint": "https://opav.work/moonfinder-mcp/mcp",
-      "fee": 0.01,
-      "service": "MoonFinder 市场信号扫描",
-      "name": "MoonFinder",
-      "tier": "capable"
     },
     "3650": {
       "endpoint": "https://tv.coagentic.markets/api/chart",
@@ -124,82 +60,12 @@
       "name": "CoAgentic Markets",
       "tier": "data"
     },
-    "3808": {
-      "endpoint": "https://warden.gudman.xyz/scan",
-      "fee": 0.01,
-      "service": "Payload Security Scan",
-      "name": "Warden",
-      "tier": "capable"
-    },
-    "3824": {
-      "endpoint": "https://direct-api-jp.lylshien.com/okx-mcp/mcp",
-      "fee": 0.05,
-      "service": "链上研究资料解析器",
-      "name": "链上研究解析助手",
-      "tier": "capable"
-    },
-    "3868": {
-      "endpoint": "https://factor-credit-check-madhavgupta28s-projects.vercel.app/credit-check",
-      "fee": 0.01,
-      "service": "credit-check",
-      "name": "Factor Credit Bureau",
-      "tier": "capable"
-    },
-    "3884": {
-      "endpoint": "https://api.qtrade.top/okx/address-trust",
-      "fee": 0.01,
-      "service": "Address Trust Check API",
-      "name": "QTrade Guard",
-      "tier": "capable"
-    },
     "3887": {
       "endpoint": "https://chuanyue-briefing-asp.vercel.app/api/sample-briefing",
       "fee": 0.01,
       "service": "Daily market briefing",
       "name": "穿越牛熊简报",
       "tier": "data"
-    },
-    "3894": {
-      "endpoint": "https://coin-signal.airblock2026.workers.dev/mcp",
-      "fee": 0.01,
-      "service": "Crypto Top / Bottom, Signal",
-      "name": "Bit Monk",
-      "tier": "capable"
-    },
-    "4045": {
-      "endpoint": "https://prediction-radar-mcp.vercel.app/mcp",
-      "fee": 0.05,
-      "service": "预测市场地址画像引擎",
-      "name": "鲸迹研判",
-      "tier": "capable"
-    },
-    "4153": {
-      "endpoint": "https://asp.cloakpipe.co/verify",
-      "fee": 0.001,
-      "service": "Evidence Receipt Verifier",
-      "name": "CloakPipe",
-      "tier": "capable"
-    },
-    "4159": {
-      "endpoint": "https://audiobook-tts-asp.vercel.app/api/text-to-speech",
-      "fee": 0.1,
-      "service": "中文文本转语音",
-      "name": "AudioForge Agent",
-      "tier": "capable"
-    },
-    "4215": {
-      "endpoint": "https://okxai.getbnb.site/mcp",
-      "fee": 0.001,
-      "service": "Alpha Signal Scanner",
-      "name": "AlphaHunter",
-      "tier": "capable"
-    },
-    "4338": {
-      "endpoint": "https://mcp.vouchgate.xyz/mcp",
-      "fee": 0.01,
-      "service": "Clean Counterparty",
-      "name": "Vouchgate",
-      "tier": "capable"
     },
     "4380": {
       "endpoint": "https://optic-production-5675.up.railway.app/v1/rug",
@@ -214,48 +80,6 @@
       "service": "Perp Positioning Signal",
       "name": "SignalDesk",
       "tier": "data"
-    },
-    "4451": {
-      "endpoint": "https://okx-ai-a2mcp-endpoint-tester.vercel.app/api/agent-output-verifier",
-      "fee": 0.1,
-      "service": "Output Verification Review",
-      "name": "Agent Output Verifier",
-      "tier": "capable"
-    },
-    "4453": {
-      "endpoint": "https://okx-ai-a2mcp-endpoint-tester.vercel.app/api/agent-trust-layer",
-      "fee": 0.1,
-      "service": "Agent Trust Review",
-      "name": "Agent Trust Layer",
-      "tier": "capable"
-    },
-    "4490": {
-      "endpoint": "https://okx-ai-a2mcp-endpoint-tester.vercel.app/api/agent-kol-studio",
-      "fee": 0.1,
-      "service": "Launch Proof Kit",
-      "name": "Launch Proof Studio",
-      "tier": "capable"
-    },
-    "4502": {
-      "endpoint": "https://factor-credit-check.vercel.app/credit-check",
-      "fee": 0.01,
-      "service": "credit-desk",
-      "name": "Factor Credit Desk",
-      "tier": "capable"
-    },
-    "4674": {
-      "endpoint": "https://policypool.vercel.app/api/covered-job-receipt",
-      "fee": 0.1,
-      "service": "Covered Job Receipt",
-      "name": "PolicyPool",
-      "tier": "capable"
-    },
-    "4759": {
-      "endpoint": "https://keryxhq.xyz/api/okxasp/tools/crypto-price",
-      "fee": 0.002,
-      "service": "Live Crypto Price Feed",
-      "name": "Keryx Finance Copilot",
-      "tier": "capable"
     },
     "4848": {
       "endpoint": "https://usstocksite.vercel.app/api/catalyst-radar",
@@ -279,6 +103,162 @@
       "tier": "data"
     }
   },
+  "needsParams": [
+    {
+      "id": "2180",
+      "name": "MistEye",
+      "endpoint": "https://x402.misteye.io/okx/x402/detect",
+      "fee": 0.0001,
+      "service": "MistEye Security Gate Scan"
+    },
+    {
+      "id": "2118",
+      "name": "Otto AI",
+      "endpoint": "https://xlayer.ottoai.services/yield-watch",
+      "fee": 0.001,
+      "service": "Otto Yield Watch"
+    },
+    {
+      "id": "4215",
+      "name": "AlphaHunter",
+      "endpoint": "https://okxai.getbnb.site/mcp",
+      "fee": 0.001,
+      "service": "Alpha Signal Scanner"
+    },
+    {
+      "id": "4153",
+      "name": "CloakPipe",
+      "endpoint": "https://asp.cloakpipe.co/verify",
+      "fee": 0.001,
+      "service": "Evidence Receipt Verifier"
+    },
+    {
+      "id": "2135",
+      "name": "Newsliquid",
+      "endpoint": "https://x402.6551.io/okx/twitter_user_info",
+      "fee": 0.002,
+      "service": "OpenNews Twitter User Info"
+    },
+    {
+      "id": "4759",
+      "name": "Keryx Finance Copilot",
+      "endpoint": "https://keryxhq.xyz/api/okxasp/tools/crypto-price",
+      "fee": 0.002,
+      "service": "Live Crypto Price Feed"
+    },
+    {
+      "id": "3255",
+      "name": "Wokey.AI 中转站",
+      "endpoint": "https://api.wokey.ai/agent/messages",
+      "fee": 0.01,
+      "service": "Pay-per-call AI Services"
+    },
+    {
+      "id": "3894",
+      "name": "Bit Monk",
+      "endpoint": "https://coin-signal.airblock2026.workers.dev/mcp",
+      "fee": 0.01,
+      "service": "Crypto Top / Bottom, Signal"
+    },
+    {
+      "id": "3808",
+      "name": "Warden",
+      "endpoint": "https://warden.gudman.xyz/scan",
+      "fee": 0.01,
+      "service": "Payload Security Scan"
+    },
+    {
+      "id": "3598",
+      "name": "MoonFinder",
+      "endpoint": "https://opav.work/moonfinder-mcp/mcp",
+      "fee": 0.01,
+      "service": "MoonFinder 市场信号扫描"
+    },
+    {
+      "id": "4338",
+      "name": "Vouchgate",
+      "endpoint": "https://mcp.vouchgate.xyz/mcp",
+      "fee": 0.01,
+      "service": "Clean Counterparty"
+    },
+    {
+      "id": "3884",
+      "name": "QTrade Guard",
+      "endpoint": "https://api.qtrade.top/okx/address-trust",
+      "fee": 0.01,
+      "service": "Address Trust Check API"
+    },
+    {
+      "id": "4502",
+      "name": "Factor Credit Desk",
+      "endpoint": "https://factor-credit-check.vercel.app/credit-check",
+      "fee": 0.01,
+      "service": "credit-desk"
+    },
+    {
+      "id": "3868",
+      "name": "Factor Credit Bureau",
+      "endpoint": "https://factor-credit-check-madhavgupta28s-projects.vercel.app/credit-check",
+      "fee": 0.01,
+      "service": "credit-check"
+    },
+    {
+      "id": "2084",
+      "name": "Dragon PayKit",
+      "endpoint": "https://aitoday.xin/dragon-mcp/package",
+      "fee": 0.01,
+      "service": "API-to-x402 Packaging Service"
+    },
+    {
+      "id": "4045",
+      "name": "鲸迹研判",
+      "endpoint": "https://prediction-radar-mcp.vercel.app/mcp",
+      "fee": 0.05,
+      "service": "预测市场地址画像引擎"
+    },
+    {
+      "id": "3824",
+      "name": "链上研究解析助手",
+      "endpoint": "https://direct-api-jp.lylshien.com/okx-mcp/mcp",
+      "fee": 0.05,
+      "service": "链上研究资料解析器"
+    },
+    {
+      "id": "4674",
+      "name": "PolicyPool",
+      "endpoint": "https://policypool.vercel.app/api/covered-job-receipt",
+      "fee": 0.1,
+      "service": "Covered Job Receipt"
+    },
+    {
+      "id": "4490",
+      "name": "Launch Proof Studio",
+      "endpoint": "https://okx-ai-a2mcp-endpoint-tester.vercel.app/api/agent-kol-studio",
+      "fee": 0.1,
+      "service": "Launch Proof Kit"
+    },
+    {
+      "id": "4159",
+      "name": "AudioForge Agent",
+      "endpoint": "https://audiobook-tts-asp.vercel.app/api/text-to-speech",
+      "fee": 0.1,
+      "service": "中文文本转语音"
+    },
+    {
+      "id": "4451",
+      "name": "Agent Output Verifier",
+      "endpoint": "https://okx-ai-a2mcp-endpoint-tester.vercel.app/api/agent-output-verifier",
+      "fee": 0.1,
+      "service": "Output Verification Review"
+    },
+    {
+      "id": "4453",
+      "name": "Agent Trust Layer",
+      "endpoint": "https://okx-ai-a2mcp-endpoint-tester.vercel.app/api/agent-trust-layer",
+      "fee": 0.1,
+      "service": "Agent Trust Review"
+    }
+  ],
   "agents": [
     {
       "id": "2023",

@@ -269,9 +269,30 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     };
 
     try {
-      const call = await callAgent(step, plan.goal);
-      result.input = call.input;
+      let call = await callAgent(step, plan.goal);
+      let agent = step.agent;
 
+      // Stand-in: if the primary produced nothing AND never took payment, the budget for
+      // that hire is untouched, so we can hire the backup within the same quote rather
+      // than hand the buyer a thinner brief. We never do this after a real settlement.
+      if ((call.output === null || !verifyStepOutput(step, call.output).passed) && !call.paid && step.fallbackAgent) {
+        const fbStep: BindStep = {
+          ...step,
+          agent: step.fallbackAgent,
+          agentServiceDescription: step.fallbackServiceDescription ?? step.agentServiceDescription,
+          boundParams: undefined,
+        };
+        const fb = await callAgent(fbStep, plan.goal);
+        if (fb.output !== null && verifyStepOutput(fbStep, fb.output).passed) {
+          call = fb;
+          agent = step.fallbackAgent;
+          result.usedFallback = true;
+          result.agentName = step.fallbackAgent.name;
+          result.agentId = step.fallbackAgent.agentId;
+        }
+      }
+
+      result.input = call.input;
       if (call.output === null) {
         result.status = "errored";
         result.error = call.error ?? "no output";
@@ -279,8 +300,8 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
         result.output = call.output;
         if (call.paid) {
           result.paymentTxHash = call.txHash ?? "settled";
-          result.feeUsdt = step.agent.feeAmount;
-          totalPaid += step.agent.feeAmount;
+          result.feeUsdt = agent.feeAmount;
+          totalPaid += agent.feeAmount;
         } else {
           result.paymentTxHash = "no_payment_needed";
         }
@@ -292,7 +313,7 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
         result.status = verdict.passed ? "passed" : "failed";
 
         if (verdict.passed) {
-          passedOutputs.push({ agent: step.agent.name, role: step.agent.category, output: call.output });
+          passedOutputs.push({ agent: agent.name, role: agent.category, output: call.output });
         }
       }
     } catch (e) {

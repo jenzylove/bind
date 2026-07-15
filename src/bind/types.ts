@@ -26,6 +26,8 @@ export interface BindStep {
   verificationType: "data" | "content" | "code";
   verificationCriteria?: string;
   fallbackAgent?: BindAgent;
+  /** Service description for the stand-in, so param inference works for it too. */
+  fallbackServiceDescription?: string;
   condition?: string;
 }
 
@@ -49,6 +51,8 @@ export interface ExecutionResult {
   agentId?: string;
   /** What this agent was actually paid, when a real settlement happened. */
   feeUsdt?: number;
+  /** True when the primary hire flaked and the stand-in delivered instead. */
+  usedFallback?: boolean;
   status: "pending" | "running" | "passed" | "failed" | "skipped" | "errored";
   input?: unknown;
   output?: unknown;

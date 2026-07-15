@@ -184,10 +184,27 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     };
   }
 
+  // Nominate a stand-in for each hire: a tested-payable agent covering the same role that
+  // wasn't already hired. If the primary flakes without taking payment, the executor can
+  // hire the stand-in inside the same budget instead of shipping a thinner brief.
+  const selectedIds = new Set(selectedAgents.map((a) => a.agentId));
+  function standInFor(agent: MarketplaceAgent): MarketplaceAgent | undefined {
+    const role = determineAgentRole(agent, req.goal);
+    return eligible
+      .map((e) => e.agent)
+      .find((cand) =>
+        !selectedIds.has(cand.agentId) &&
+        PAYABLE_AGENT_IDS.has(cand.agentId) &&
+        determineAgentRole(cand, req.goal) === role &&
+        chosenService(cand).feeAmount <= chosenService(agent).feeAmount + 0.02);
+  }
+
   const steps: BindStep[] = selectedAgents.map((agent, i) => {
     const svc = chosenService(agent);
     // Store the full service description for param inference
     const agentServiceDescription = svc.description || agent.description;
+    const backup = standInFor(agent);
+    const backupSvc = backup ? chosenService(backup) : undefined;
     return {
       step: i + 1,
       agent: {
@@ -204,6 +221,17 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       boundParams: PAYABLE_ENDPOINTS.get(agent.agentId)?.params ?? undefined,
       // Shown to the buyer so the crew is justified by evidence, not vibes.
       track: repSummary(agent.agentId) ?? undefined,
+      fallbackAgent: backup && backupSvc ? {
+        agentId: backup.agentId,
+        name: backup.name,
+        serviceId: backupSvc.serviceId,
+        serviceName: backupSvc.serviceName,
+        endpoint: backupSvc.endpoint,
+        feeAmount: backupSvc.feeAmount,
+        feeToken: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+        category: determineAgentRole(backup, req.goal) as any,
+      } : undefined,
+      fallbackServiceDescription: backupSvc ? (backupSvc.description || backup!.description) : undefined,
       inputTemplate: { q: req.goal },
       verificationType: "data",
       verificationCriteria: "Agent returned structured output",

@@ -124,14 +124,19 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   // payability + complementarity). This is what scales Bind to any goal across the
   // full marketplace without a hand-tuned agent list.
   const byId = new Map(eligible.map((e) => [e.agent.agentId, e.agent]));
-  const candidates: SelectCandidate[] = eligible.map(({ agent }) => ({
-    agentId: agent.agentId,
-    name: agent.name,
-    category: determineAgentRole(agent, req.goal),
-    description: agent.description,
-    cheapestFee: chosenService(agent).feeAmount,
-    payable: PAYABLE_AGENT_IDS.has(agent.agentId),
-  }));
+  const candidates: SelectCandidate[] = eligible.map(({ agent }) => {
+    const svc = chosenService(agent);
+    return {
+      agentId: agent.agentId,
+      name: agent.name,
+      category: determineAgentRole(agent, req.goal),
+      // Prefer the service's own description; the vendor profile is the weaker signal.
+      description: svc.description || agent.description,
+      service: svc.serviceName,
+      cheapestFee: svc.feeAmount,
+      payable: PAYABLE_AGENT_IDS.has(agent.agentId),
+    };
+  });
   // Cap the crew at 3. The router used to pad to 4, which hired near-duplicate agents
   // (three "market data" specialists on one brief). Every extra hire is another charge to
   // the buyer and another chance to fail, so a smaller, distinct crew is strictly better.

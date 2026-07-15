@@ -14,6 +14,8 @@ export interface SelectCandidate {
   name: string;
   category: string;
   description: string;
+  /** The exact service Bind will call for this agent — the thing the router must match on. */
+  service: string;
   cheapestFee: number;
   payable: boolean;
 }
@@ -29,8 +31,11 @@ export async function selectAgents(goal: string, candidates: SelectCandidate[], 
   // Keep the catalog compact: payable first, then a bounded slice, short descriptions.
   const ranked = [...candidates].sort((a, b) => Number(b.payable) - Number(a.payable));
   const slice = ranked.slice(0, 70);
+  // Lead each line with the SERVICE that will actually be invoked. Routing on the vendor's
+  // profile blurb alone mis-hires badly (a rug-scan goal hired a price feed because the
+  // vendor reads as a generic markets company).
   const catalog = slice
-    .map((c) => `${c.agentId} | ${c.payable ? "PAYABLE" : "untested"} | $${c.cheapestFee} | ${c.category} | ${c.name}: ${c.description.replace(/\s+/g, " ").slice(0, 140)}`)
+    .map((c) => `${c.agentId} | ${c.payable ? "PAYABLE" : "untested"} | $${c.cheapestFee} | ${c.category} | SERVICE: "${c.service}" (by ${c.name}) :: ${c.description.replace(/\s+/g, " ").slice(0, 120)}`)
     .join("\n");
 
   try {

@@ -132,7 +132,10 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     cheapestFee: chosenService(agent).feeAmount,
     payable: PAYABLE_AGENT_IDS.has(agent.agentId),
   }));
-  const picks = await selectAgents(req.goal, candidates, 4);
+  // Cap the crew at 3. The router used to pad to 4, which hired near-duplicate agents
+  // (three "market data" specialists on one brief). Every extra hire is another charge to
+  // the buyer and another chance to fail, so a smaller, distinct crew is strictly better.
+  const picks = await selectAgents(req.goal, candidates, 3);
   if (picks) {
     for (const p of picks) {
       const agent = byId.get(p.agentId);
@@ -148,7 +151,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   if (selectedAgents.length === 0) {
     const usedRoles = new Set<string>();
     for (const { agent } of eligible) {
-      if (selectedAgents.length >= 4) break;
+      if (selectedAgents.length >= 3) break;
       const fee = chosenService(agent).feeAmount;
       if (runningTotal + fee > MAX_TOTAL_USDT) continue;
       const role = determineAgentRole(agent, req.goal);

@@ -22,11 +22,13 @@ function truncate(s: string, n: number): string {
 // them constantly and they make the brief read as machine-written. Strip them for real.
 function stripDashes(s: string): string {
   return s
-    .replace(/\s+[—–]\s+/g, ", ")   // "x — y"  ->  "x, y"
-    .replace(/[—–]/g, ", ")          // any stragglers
-    .replace(/,\s*,/g, ",")          // collapse doubles the swap can create
-    .replace(/,\s*([.:;)])/g, "$1")  // ", ." -> "."
-    .replace(/\s{2,}/g, " ");
+    .replace(/^[ \t]*[-*][ \t]+/gm, "• ")  // markdown bullets render as stray hyphens -> real bullets
+    .replace(/\s+[—–]\s+/g, ", ")          // "x — y"  ->  "x, y"
+    .replace(/[—–]/g, ", ")                 // any stragglers
+    .replace(/\s+-\s+/g, ", ")             // an inline " - " is a connector, never a hyphenated word
+    .replace(/,\s*,/g, ",")                 // collapse doubles the swap can create
+    .replace(/,\s*([.:;)])/g, "$1")         // ", ." -> "."
+    .replace(/[ \t]{2,}/g, " ");            // keep newlines; only squeeze inline runs
 }
 
 // Fallback when there is no LLM key: a readable digest, not a raw dump.
@@ -60,7 +62,8 @@ export async function synthesizeDeliverable(goal: string, outputs: AgentOutput[]
         "Lead with a one-line verdict, then 3-6 tight bullet points of the specific facts that support it (cite which agent each came from). " +
         "If the evidence is thin or contradictory, say so plainly. Never invent data not present in the evidence. No preamble, no markdown headers, under 200 words. " +
         "PUNCTUATION: never use em dashes or en dashes (— –). Do not use a hyphen as a connector or aside. Use commas, periods, colons or parentheses instead. " +
-        "Hyphens are only allowed inside genuinely hyphenated terms (long-short, funding-rate). Write plain, readable sentences.",
+        "Hyphens are only allowed inside genuinely hyphenated terms (long-short, funding-rate). Write plain, readable sentences. " +
+        "Start each bullet with '• ' on its own line. Never start a line with '-' or '*'.",
       messages: [
         {
           role: "user",

@@ -548,7 +548,14 @@ const CAP_LABELS = {
   security: 'Security & risk scan', market_data: 'Market data & positioning', sentiment: 'Sentiment & news',
   defi: 'DeFi analytics', onchain: 'On-chain data', analysis: 'Analysis', content: 'Content', general: 'Specialist agent',
 };
+// Label each hire by the SERVICE it performs, not its coarse category — a category label
+// made four different agents read as the same repeated row. The service is specific and
+// unique per hire while still not naming the vendor.
 function capLabel(cat) { return CAP_LABELS[cat] || 'Specialist agent'; }
+function hireLabel(step) {
+  const svc = (step.agent && step.agent.serviceName || '').trim();
+  return svc && !/^unnamed$/i.test(svc) ? svc : capLabel(step.agent && step.agent.category);
+}
 function showError(m) { const e = document.getElementById('errorMsg'); e.textContent = m; e.classList.add('visible'); }
 function hideError() { document.getElementById('errorMsg').classList.remove('visible'); }
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1900); }
@@ -623,8 +630,8 @@ async function createPlan() {
         <div class="step-row" data-step="${step.step}">
           <span class="step-dot"></span>
           <div class="step-info">
-            <div class="name">${capLabel(step.agent.category)}</div>
-            <div class="detail">Vetted specialist · verified before it counts</div>
+            <div class="name">${hireLabel(step)}</div>
+            <div class="detail">${capLabel(step.agent.category)} · vetted, verified before it counts</div>
           </div>
         </div>`;
     });

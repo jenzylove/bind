@@ -2,10 +2,13 @@
 // Caches results for 5 minutes so searches are fast
 // Refreshes automatically to pick up new agents
 
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
+const execFileAsync = promisify(execFile);
 const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const SEARCH_CONCURRENCY = 8;       // parallel marketplace searches
 
 interface CachedCatalog {
   timestamp: number;
@@ -13,6 +16,8 @@ interface CachedCatalog {
 }
 
 let catalogCache: CachedCatalog | null = null;
+// In-flight refresh, so concurrent callers share one sweep instead of stampeding.
+let refreshing: Promise<MarketplaceAgent[]> | null = null;
 
 export interface MarketplaceAgent {
   agentId: string;
@@ -34,45 +39,56 @@ export interface MarketplaceService {
   description?: string;
 }
 
-function ensureLoggedIn(): boolean {
+async function ensureLoggedIn(): Promise<boolean> {
   try {
-    execFileSync(ONCHAINOS_PATH, ["wallet", "login"], { timeout: 10000, encoding: "utf8" });
+    await execFileAsync(ONCHAINOS_PATH, ["wallet", "login"], { timeout: 10000 });
     return true;
   } catch {
     return false;
   }
 }
 
-function fetchAllA2McpAgents(): MarketplaceAgent[] {
-  ensureLoggedIn();
+// Broad semantic sweep to reach the whole marketplace. The backend search is a
+// similarity ranker with no "list all", so we union the top matches across many
+// diverse keywords — this reaches ~107 unique A2MCP agents (effectively the full
+// callable marketplace).
+const QUERIES = [
+  "ai", "crypto", "trading", "market", "data", "security", "audit", "news", "social",
+  "sentiment", "nft", "defi", "yield", "swap", "token", "price", "onchain", "wallet",
+  "analytics", "signal", "research", "meme", "derivatives", "funding", "liquidation",
+  "twitter", "kol", "content", "art", "game", "sports", "prediction", "health", "legal",
+  "credit", "payment", "bridge", "stake", "dex", "rpc", "chart", "alert", "monitor",
+  "scan", "risk", "brief", "quant", "arbitrage", "options", "stocks", "macro", "whale",
+  "airdrop", "launch", "mint", "A2MCP",
+];
+
+async function searchOne(query: string): Promise<any[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      ONCHAINOS_PATH,
+      ["agent", "search", "--query", query, "--status", "online", "--page-size", "20"],
+      { timeout: 10000 },
+    );
+    const parsed = JSON.parse(stdout);
+    return parsed.ok && parsed.data?.list ? parsed.data.list : [];
+  } catch {
+    return []; // skip failed queries
+  }
+}
+
+// Runs the sweep with bounded concurrency. Previously this was 57 sequential
+// execFileSync calls, which blocked the event loop for ~90s — the whole server (health
+// checks included) froze during a cold plan, which is what aborted client requests.
+async function fetchAllA2McpAgents(): Promise<MarketplaceAgent[]> {
+  await ensureLoggedIn();
   const allAgents: MarketplaceAgent[] = [];
   const seenIds = new Set<string>();
 
-  // Broad semantic sweep to reach the whole marketplace. The backend search is a
-  // similarity ranker with no "list all", so we union the top matches across many
-  // diverse keywords — this reaches ~107 unique A2MCP agents (effectively the full
-  // callable marketplace). Cached for 5 min so it runs once, not per request.
-  const queries = [
-    "ai", "crypto", "trading", "market", "data", "security", "audit", "news", "social",
-    "sentiment", "nft", "defi", "yield", "swap", "token", "price", "onchain", "wallet",
-    "analytics", "signal", "research", "meme", "derivatives", "funding", "liquidation",
-    "twitter", "kol", "content", "art", "game", "sports", "prediction", "health", "legal",
-    "credit", "payment", "bridge", "stake", "dex", "rpc", "chart", "alert", "monitor",
-    "scan", "risk", "brief", "quant", "arbitrage", "options", "stocks", "macro", "whale",
-    "airdrop", "launch", "mint", "A2MCP",
-  ];
-
-  for (const query of queries) {
-    try {
-      const result = execFileSync(
-        ONCHAINOS_PATH,
-        ["agent", "search", "--query", query, "--status", "online", "--page-size", "20"],
-        { timeout: 10000, encoding: "utf8" }
-      );
-      const parsed = JSON.parse(result);
-      if (!parsed.ok || !parsed.data?.list) continue;
-
-      for (const a of parsed.data.list) {
+  let i = 0;
+  async function worker() {
+    while (i < QUERIES.length) {
+      const list = await searchOne(QUERIES[i++]);
+      for (const a of list) {
         if (seenIds.has(String(a.agentId))) continue;
         seenIds.add(String(a.agentId));
 
@@ -102,21 +118,39 @@ function fetchAllA2McpAgents(): MarketplaceAgent[] {
           })),
         });
       }
-    } catch {
-      // skip failed queries
     }
   }
+  await Promise.all(Array.from({ length: SEARCH_CONCURRENCY }, worker));
 
   return allAgents;
 }
 
-function getCatalog(): MarketplaceAgent[] {
+function startRefresh(): Promise<MarketplaceAgent[]> {
+  if (refreshing) return refreshing;              // share one sweep across callers
+  refreshing = fetchAllA2McpAgents()
+    .then((agents) => {
+      // Never clobber a good cache with an empty sweep (e.g. a transient login failure).
+      if (agents.length > 0) catalogCache = { timestamp: Date.now(), agents };
+      return catalogCache?.agents ?? agents;
+    })
+    .catch(() => catalogCache?.agents ?? [])
+    .finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+// Stale-while-revalidate: a warm cache answers instantly; an expired one is still served
+// immediately while a refresh runs in the background. Only a completely cold start waits.
+async function getCatalog(): Promise<MarketplaceAgent[]> {
   const now = Date.now();
-  if (catalogCache && now - catalogCache.timestamp < CACHE_TTL_MS) {
-    return catalogCache.agents;
-  }
-  catalogCache = { timestamp: now, agents: fetchAllA2McpAgents() };
-  return catalogCache.agents;
+  if (catalogCache && now - catalogCache.timestamp < CACHE_TTL_MS) return catalogCache.agents;
+  if (catalogCache) { void startRefresh(); return catalogCache.agents; }
+  return startRefresh();
+}
+
+// Called at boot so the first real user never pays the cold-start cost.
+export async function warmCatalog(): Promise<number> {
+  const agents = await getCatalog();
+  return agents.length;
 }
 
 function scoreAgentRelevance(agent: MarketplaceAgent, goal: string): number {
@@ -156,7 +190,7 @@ function scoreAgentRelevance(agent: MarketplaceAgent, goal: string): number {
 }
 
 export async function findMatchingAgentsScored(goal: string): Promise<{ agent: MarketplaceAgent; score: number }[]> {
-  const catalog = getCatalog();
+  const catalog = await getCatalog();
   return catalog
     .map((agent) => ({ agent, score: scoreAgentRelevance(agent, goal) }))
     .sort((a, b) => b.score - a.score);
@@ -166,6 +200,6 @@ export async function findMatchingAgents(goal: string): Promise<MarketplaceAgent
   return (await findMatchingAgentsScored(goal)).slice(0, 10).map((s) => s.agent);
 }
 
-export function getAgentCount(): number {
-  return getCatalog().length;
+export async function getAgentCount(): Promise<number> {
+  return (await getCatalog()).length;
 }

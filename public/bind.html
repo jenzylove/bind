@@ -73,6 +73,16 @@
   .chip { font-size: 12px; color: var(--ivory-muted); background: var(--navy-light); border: 1px solid var(--navy-border); border-radius: 999px; padding: 6px 12px; cursor: pointer; transition: .15s; }
   .chip:hover { color: var(--cyan); border-color: #c8a45a4d; }
 
+  /* wallet picker (EIP-6963 — lists every installed wallet, not just MetaMask) */
+  .wallet-modal { position: fixed; inset: 0; background: #0a0806cc; display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .wallet-card { background: var(--navy-light); border: 1px solid var(--navy-border); border-radius: 14px; padding: 20px; width: 100%; max-width: 330px; }
+  .wallet-title { font-family: var(--serif); font-size: 19px; margin-bottom: 14px; }
+  .wallet-opt { width: 100%; display: flex; align-items: center; gap: 11px; background: var(--navy); border: 1px solid var(--navy-border); color: var(--ivory); font-family: var(--sans); font-size: 14px; padding: 12px 14px; border-radius: 10px; cursor: pointer; margin-bottom: 8px; transition: .15s; }
+  .wallet-opt:hover { border-color: var(--cyan); color: var(--cyan); }
+  .wallet-opt img { border-radius: 5px; }
+  .wallet-cancel { width: 100%; background: none; border: none; color: var(--ivory-dim); font-family: var(--sans); font-size: 13px; padding: 9px; cursor: pointer; }
+  .wallet-cancel:hover { color: var(--ivory-muted); }
+
   /* hero CTA (marketing landing — no input box here) */
   .hero-cta { display: flex; gap: 12px; justify-content: center; margin-top: 42px; flex-wrap: wrap; }
   .hero-cta .btn-cyan { flex: none; padding: 15px 36px; font-size: 15px; }
@@ -401,26 +411,71 @@ function disconnectWallet() {
   setWalletBtn();
   toast('Wallet disconnected');
   // Best-effort: ask the wallet to forget the approval so the next connect re-prompts.
-  try { window.ethereum?.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] }).catch(() => {}); } catch (e) {}
+  try { eth()?.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] }).catch(() => {}); } catch (e) {}
+}
+
+// EIP-6963: every installed wallet announces itself, so we can offer a real choice
+// (Rabby, MetaMask, OKX, …) instead of whichever extension happened to win the
+// window.ethereum injection. No library needed.
+const discovered = new Map(); // rdns -> { info, provider }
+window.addEventListener('eip6963:announceProvider', (e) => {
+  const d = e.detail; if (d?.info?.rdns) discovered.set(d.info.rdns, d);
+});
+window.dispatchEvent(new Event('eip6963:requestProvider'));
+
+function walletChoices() {
+  const list = [...discovered.values()];
+  if (list.length) return list;
+  // Fallback for wallets that don't announce: the legacy injected provider.
+  return window.ethereum ? [{ info: { name: 'Injected wallet', rdns: 'injected', icon: '' }, provider: window.ethereum }] : [];
+}
+
+function pickWallet() {
+  const list = walletChoices();
+  if (list.length <= 1) return Promise.resolve(list[0] || null);
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'wallet-modal';
+    back.innerHTML = `<div class="wallet-card">
+      <p class="wallet-title">Choose a wallet</p>
+      ${list.map((w, i) => `<button class="wallet-opt" data-i="${i}">
+        ${w.info.icon ? `<img src="${w.info.icon}" alt="" width="22" height="22">` : ''}<span>${w.info.name}</span>
+      </button>`).join('')}
+      <button class="wallet-cancel">Cancel</button>
+    </div>`;
+    back.addEventListener('click', (ev) => {
+      if (ev.target === back || ev.target.classList.contains('wallet-cancel')) { back.remove(); resolve(null); return; }
+      const btn = ev.target.closest('.wallet-opt');
+      if (btn) { back.remove(); resolve(list[Number(btn.dataset.i)]); }
+    });
+    document.body.appendChild(back);
+  });
 }
 
 async function connectWallet() {
-  if (!window.ethereum) { toast('No wallet found — install MetaMask to pay and run missions'); return null; }
+  const list = walletChoices();
+  if (!list.length) { toast('No wallet found — install MetaMask, Rabby, or OKX Wallet to run missions'); return null; }
+  const chosen = await pickWallet();
+  if (!chosen) return null;
   try {
-    const accts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const accts = await chosen.provider.request({ method: 'eth_requestAccounts' });
     wallet.address = accts && accts[0];
+    wallet.provider = chosen.provider;      // pay through the wallet the user actually picked
+    wallet.name = chosen.info.name;
     setWalletBtn();
     return wallet.address;
   } catch (e) { toast('Wallet connection cancelled'); return null; }
 }
+// Every wallet call goes through the chosen provider, falling back to the injected one.
+function eth() { return wallet.provider || window.ethereum; }
 
 async function ensureXLayer() {
-  const id = await window.ethereum.request({ method: 'eth_chainId' });
+  const id = await eth().request({ method: 'eth_chainId' });
   if (id === XLAYER_HEX) return;
   try {
-    await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: XLAYER_HEX }] });
+    await eth().request({ method: 'wallet_switchEthereumChain', params: [{ chainId: XLAYER_HEX }] });
   } catch (e) {
-    await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{
+    await eth().request({ method: 'wallet_addEthereumChain', params: [{
       chainId: XLAYER_HEX, chainName: 'X Layer',
       rpcUrls: ['https://rpc.xlayer.tech'],
       nativeCurrency: { name: 'OKB', symbol: 'OKB', decimals: 18 },
@@ -448,7 +503,7 @@ async function payForPlan(cfg) {
   const amt = amount.toString(16).padStart(64, '0');
   const data = '0xa9059cbb' + to + amt;
   addLog(`Requesting $${currentPlan.totalPriceUsdt.toFixed(3)} USDT payment approval…`, 'info');
-  const txHash = await window.ethereum.request({ method: 'eth_sendTransaction', params: [{
+  const txHash = await eth().request({ method: 'eth_sendTransaction', params: [{
     from: wallet.address, to: cfg.usdtAsset, data,
   }] });
   addLog(`Payment sent: ${txHash.slice(0,10)}…`, 'paid');
@@ -465,7 +520,7 @@ async function payForPlan(cfg) {
 async function waitForReceipt(txHash) {
   for (let i = 0; i < 40; i++) {
     try {
-      const r = await window.ethereum.request({ method: 'eth_getTransactionReceipt', params: [txHash] });
+      const r = await eth().request({ method: 'eth_getTransactionReceipt', params: [txHash] });
       if (r && r.blockNumber) return r.status === '0x1' || r.status === 1;
     } catch (e) {}
     await sleep(1500);

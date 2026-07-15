@@ -8,6 +8,7 @@ import { requirePayment } from "./x402.js";
 import { bindRouter } from "./bind/routes.js";
 import { renderBadge } from "./badge.js";
 import { loadExecution } from "./bind/store.js";
+import { warmCatalog } from "./bind/marketplace.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "..", "public");
@@ -112,6 +113,11 @@ app.get("/badge/:executionId.svg", (req, res) => {
 
 const server = app.listen(config.port, () => {
   console.log(`[bind] listening on :${config.port}  (paymentConfigured=${isConfiguredForPayment()})`);
+  // Warm the marketplace catalog in the background so the first mission doesn't pay the
+  // cold-start cost. Failures are non-fatal — the first plan will just refresh it.
+  warmCatalog()
+    .then((n) => console.log(`[bind] marketplace catalog warmed: ${n} agents`))
+    .catch((e) => console.warn(`[bind] catalog warm failed (non-fatal): ${(e as Error).message}`));
 });
 
 process.on("SIGINT", () => server.close(() => process.exit(0)));

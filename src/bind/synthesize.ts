@@ -18,6 +18,17 @@ function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + " …(truncated)" : s;
 }
 
+// The prompt asks for no em/en dashes, but a prompt is not a guarantee — models reach for
+// them constantly and they make the brief read as machine-written. Strip them for real.
+function stripDashes(s: string): string {
+  return s
+    .replace(/\s+[—–]\s+/g, ", ")   // "x — y"  ->  "x, y"
+    .replace(/[—–]/g, ", ")          // any stragglers
+    .replace(/,\s*,/g, ",")          // collapse doubles the swap can create
+    .replace(/,\s*([.:;)])/g, "$1")  // ", ." -> "."
+    .replace(/\s{2,}/g, " ");
+}
+
 // Fallback when there is no LLM key: a readable digest, not a raw dump.
 function plainSummary(goal: string, outputs: AgentOutput[]): string {
   if (outputs.length === 0) return "No agent outputs passed verification, so there is no deliverable for this goal.";
@@ -46,8 +57,10 @@ export async function synthesizeDeliverable(goal: string, outputs: AgentOutput[]
       system:
         "You are Bind, an orchestrator that hired several specialized on-chain agents to answer a user's goal and must now hand back ONE clear deliverable. " +
         "Write a direct, decision-useful answer to the goal using ONLY the agent evidence provided. " +
-        "Lead with a one-line verdict/answer, then 3-6 tight bullet points of the specific facts that support it (cite which agent each came from). " +
-        "If the evidence is thin or contradictory, say so plainly. Never invent data not present in the evidence. No preamble, no markdown headers, under 200 words.",
+        "Lead with a one-line verdict, then 3-6 tight bullet points of the specific facts that support it (cite which agent each came from). " +
+        "If the evidence is thin or contradictory, say so plainly. Never invent data not present in the evidence. No preamble, no markdown headers, under 200 words. " +
+        "PUNCTUATION: never use em dashes or en dashes (— –). Do not use a hyphen as a connector or aside. Use commas, periods, colons or parentheses instead. " +
+        "Hyphens are only allowed inside genuinely hyphenated terms (long-short, funding-rate). Write plain, readable sentences.",
       messages: [
         {
           role: "user",
@@ -58,7 +71,7 @@ export async function synthesizeDeliverable(goal: string, outputs: AgentOutput[]
 
     const block = resp.content.find((b) => b.type === "text");
     const text = block && "text" in block ? block.text.trim() : "";
-    return text || plainSummary(goal, outputs);
+    return text ? stripDashes(text) : plainSummary(goal, outputs);
   } catch {
     return plainSummary(goal, outputs);
   }

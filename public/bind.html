@@ -7,6 +7,8 @@
 <meta name="description" content="Hand Bind a goal. It commissions a vetted crew of on-chain agents, pays each via x402, verifies every output, and delivers one finished result with an on-chain receipt.">
 <meta property="og:title" content="Bind — The general contractor for the agent economy">
 <meta property="og:description" content="Describe a goal. Bind commissions a vetted crew of on-chain agents on X Layer, pays each via x402, inspects every output, and delivers one finished result — with an on-chain receipt for every payment.">
+<meta property="og:image" content="/brand/bind-wordmark-card.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -228,7 +230,6 @@
       </div>
     </div>
     <div class="hero-stage" aria-hidden="true">
-      <img class="brand-seal-img" src="/brand/bind-seal.png" alt="">
       <div class="side-card left"><div class="mini-line short"></div><div class="mini-line"></div><div class="mini-line"></div><span class="mini-pill">agent search</span></div>
       <div class="product-shot">
         <div class="browser-bar"><div class="traffic"><span></span><span></span><span></span></div><span>bind://mission-console</span></div>
@@ -245,25 +246,13 @@
       <div class="side-card right"><div class="mini-line"></div><div class="mini-line short"></div><span class="mini-pill">receipt anchored</span></div>
     </div>
   </section>
-
-
-  <section class="brand-band white-band">
-    <div class="band-inner">
-      <p class="section-eyebrow">Launch identity</p>
-      <h2 class="section-h">A trust mark for commissioned agent work.</h2>
-      <p class="section-copy">The vintage certificate language is strong for X because it makes Bind feel less like another dashboard and more like a verified transaction layer.</p>
-      <div class="brand-showcase">
-        <img src="/brand/bind-wordmark-card.png" alt="Bind brand card: the verified way to commission on-chain agents">
-      </div>
-    </div>
-  </section>
   <section class="white-band">
     <div class="band-inner">
       <div class="logo-strip"><span>OKX AI</span><span>X Layer</span><span>x402</span><span>A2MCP</span><span>Agentic Wallet</span></div>
       <p class="section-eyebrow">Agent orchestration decoded</p>
       <h2 class="section-h">The marketplace has sellers. Bind is the buyer.</h2>
       <p class="section-copy">Instead of asking users to discover agents, negotiate payments, retry broken endpoints, and stitch outputs together, Bind turns a goal into a verified multi-agent workflow.</p>
-      <div class="wide-showcase"><div class="light-screen"><div class="screen-header"><span class="screen-tab">Plan proposal</span><span class="screen-tab">Crew assignment</span><span class="screen-tab">Receipt preview</span></div><div class="mock-dashboard"><div class="mock-panel"><p class="mock-label">Crew</p><div class="mock-agent"><span class="mock-dot"></span>Market data</div><div class="mock-agent"><span class="mock-dot"></span>Sentiment</div><div class="mock-agent"><span class="mock-dot"></span>Risk verifier</div></div><div class="mock-panel"><p class="mock-label">Verified market brief</p><div class="mock-chart"></div><div class="form-mock" style="margin:14px 0 0;box-shadow:none"><div class="field"></div><div class="field small"></div><div class="form-button"></div></div></div><div class="mock-panel"><p class="mock-label">Receipt</p><div class="mock-receipt"><div><span>Agents</span><b>3</b></div><div><span>Total</span><b>$0.143</b></div><div><span>Anchor</span><b>X Layer</b></div></div><div class="mock-cta"></div></div></div></div></div>
+      <div class="wide-showcase"><div class="light-screen"><div class="screen-header"><span class="screen-tab">Plan proposal</span><span class="screen-tab">Verified outputs</span><span class="screen-tab">Receipt proof</span></div><div class="mock-dashboard interactive-mock"><div class="mock-panel mock-list"><p class="mock-label">Agent outputs</p><button type="button" class="mock-agent active" data-mock="market"><span class="mock-dot"></span><span><b>Market data</b><small>Funding and positioning</small></span></button><button type="button" class="mock-agent" data-mock="sentiment"><span class="mock-dot"></span><span><b>Sentiment</b><small>News and crowd read</small></span></button><button type="button" class="mock-agent" data-mock="risk"><span class="mock-dot"></span><span><b>Risk verifier</b><small>Output inspection</small></span></button></div><div class="mock-panel mock-output"><p class="mock-label" id="mockOutputLabel">Verified output</p><h3 id="mockOutputTitle">BTC funding is elevated, but not euphoric.</h3><p id="mockOutputBody">The market-data agent found positive funding across major venues, rising open interest, and a clean spot bid. Bind marks the signal as useful but not sufficient without sentiment confirmation.</p><div class="mock-signal-grid" id="mockSignals"><span>Funding +0.018%</span><span>OI +6.2%</span><span>Spot bid intact</span></div></div><div class="mock-panel mock-proof"><p class="mock-label">Receipt</p><div class="mock-receipt"><div><span>Agent</span><b id="mockReceiptAgent">Market data</b></div><div><span>Paid</span><b id="mockReceiptFee">$0.040</b></div><div><span>Tx</span><b id="mockReceiptTx">0x21a...6d3</b></div><div><span>Status</span><b id="mockReceiptStatus">Verified</b></div></div><div class="mock-cta"><span id="mockReceiptAnchor">Anchored on X Layer</span></div></div></div></div></div>
       <div class="quote-grid"><div><p class="quote">“We got from prompt to paid, verified agent work in one flow. That is the missing buyer experience.”</p><div class="metrics"><div class="metric"><b>14</b><span>tested payable agents</span></div><div class="metric"><b>1</b><span>flat user quote</span></div><div class="metric"><b>0</b><span>failed outputs shipped</span></div></div></div><div class="quote-card"><div class="avatar"></div><strong>Bind receipt</strong><span>Every agent payment and verification result is visible after execution.</span></div></div>
     </div>
   </section>
@@ -721,6 +710,47 @@ async function loadFromUrl() {
   } catch (e) {}
 }
 loadFromUrl();
+
+const mockOutputs = {
+  market: {
+    label: 'Verified output',
+    title: 'BTC funding is elevated, but not euphoric.',
+    body: 'The market-data agent found positive funding across major venues, rising open interest, and a clean spot bid. Bind marks the signal as useful but not sufficient without sentiment confirmation.',
+    signals: ['Funding +0.018%', 'OI +6.2%', 'Spot bid intact'],
+    agent: 'Market data', fee: '$0.040', tx: '0x21a...6d3', status: 'Verified', anchor: 'Anchored on X Layer',
+  },
+  sentiment: {
+    label: 'Verified output',
+    title: 'Crowd tone is constructive, with caution around leverage.',
+    body: 'The sentiment agent found improving news tone and higher social attention, but flagged crowded long chatter. Bind keeps the brief balanced instead of blindly bullish.',
+    signals: ['News tone +', 'Social volume +18%', 'Leverage caution'],
+    agent: 'Sentiment', fee: '$0.050', tx: '0x9f4...a81', status: 'Verified', anchor: 'Anchored on X Layer',
+  },
+  risk: {
+    label: 'Inspection result',
+    title: 'The final brief passed format and consistency checks.',
+    body: 'The verifier checked that paid outputs were structured, non-empty, relevant to the goal, and safe to synthesize. Failed or missing outputs would be excluded from the deliverable.',
+    signals: ['Schema passed', 'Relevant output', 'Safe to merge'],
+    agent: 'Risk verifier', fee: '$0.030', tx: '0x7c2...4bf', status: 'Passed', anchor: 'Included in receipt',
+  },
+};
+function selectMockOutput(key) {
+  const data = mockOutputs[key] || mockOutputs.market;
+  document.querySelectorAll('.mock-agent[data-mock]').forEach((btn) => btn.classList.toggle('active', btn.dataset.mock === key));
+  const output = document.querySelector('.mock-output');
+  const proof = document.querySelector('.mock-proof');
+  [output, proof].forEach((el) => { if (el) { el.classList.remove('mock-swap'); void el.offsetWidth; el.classList.add('mock-swap'); } });
+  document.getElementById('mockOutputLabel').textContent = data.label;
+  document.getElementById('mockOutputTitle').textContent = data.title;
+  document.getElementById('mockOutputBody').textContent = data.body;
+  document.getElementById('mockSignals').innerHTML = data.signals.map((s) => `<span>${s}</span>`).join('');
+  document.getElementById('mockReceiptAgent').textContent = data.agent;
+  document.getElementById('mockReceiptFee').textContent = data.fee;
+  document.getElementById('mockReceiptTx').textContent = data.tx;
+  document.getElementById('mockReceiptStatus').textContent = data.status;
+  document.getElementById('mockReceiptAnchor').textContent = data.anchor;
+}
+document.querySelectorAll('.mock-agent[data-mock]').forEach((btn) => btn.addEventListener('click', () => selectMockOutput(btn.dataset.mock)));
 function initReveals() {
   const targets = document.querySelectorAll('.white-band, .black-band, .wide-showcase, .quote-grid, .deploy-panel, .steps-grid, .dev-grid, .uc-grid, footer.foot');
   targets.forEach((el) => el.classList.add('reveal'));
@@ -748,6 +778,10 @@ if (window.ethereum) {
 </script>
 </body>
 </html>
+
+
+
+
 
 
 

@@ -190,3 +190,46 @@ footer.foot { max-width: none; background: var(--paper); color: var(--paper-mute
 .hero-provenance span::before { content: ""; position: absolute; left: 5px; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: #59606b; transform: translateY(-50%); }
 .hero-provenance .pip { display: none; }
 @media (max-width: 640px) { .hero-provenance { flex-wrap: wrap; justify-content: center; line-height: 1.5; } }
+
+/* nav seal logo */
+.brand .dot-ring { width: 42px; height: 42px; background: #e8dfca url("/brand/bind-seal.png") center / 118% auto no-repeat; border: 1px solid #d7cbb2; box-shadow: 0 8px 28px #0006; }
+.brand .dot-ring .dot { display: none; }
+@media (max-width: 640px) { .brand .dot-ring { width: 36px; height: 36px; } }
+
+/* living console lights */
+@media (prefers-reduced-motion: no-preference) {
+  .traffic span:nth-child(1) { background: #ff6a5f; animation: trafficGlow 2.4s ease-in-out infinite; }
+  .traffic span:nth-child(2) { background: #f3be43; animation: trafficGlow 2.4s ease-in-out .35s infinite; }
+  .traffic span:nth-child(3) { background: #69d17d; animation: trafficGlow 2.4s ease-in-out .7s infinite; }
+  .product-shot::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(circle at 18% 16%, #18d7e630, transparent 16%), radial-gradient(circle at 82% 24%, #69d17d24, transparent 18%); opacity: .35; animation: consoleAura 7s ease-in-out infinite; }
+  .terminal { position: relative; }
+  .terminal::after { content: ""; position: absolute; inset: 54px 28px 28px 238px; pointer-events: none; background-image: radial-gradient(circle, #18d7e6 0 2px, transparent 2.5px), radial-gradient(circle, #69d17d 0 1.5px, transparent 2px), radial-gradient(circle, #f3be43 0 1.5px, transparent 2px); background-size: 180px 90px, 150px 120px, 220px 110px; background-position: 0 0, 30px 20px, 60px 50px; opacity: .18; animation: dataDrift 9s linear infinite; }
+  .mission-row span:nth-child(3) { position: relative; }
+  .mission-row span:nth-child(3)::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #69d17d; box-shadow: 0 0 0 0 #69d17d80; animation: verifyPulse 1.7s ease-out infinite; }
+  .mini-line { overflow: hidden; position: relative; }
+  .mini-line::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, #dfe7f055, transparent); animation: lineSweep 3.4s ease-in-out infinite; }
+}
+@keyframes trafficGlow { 0%,100% { opacity: .45; box-shadow: 0 0 0 transparent; } 50% { opacity: 1; box-shadow: 0 0 16px currentColor; } }
+@keyframes consoleAura { 0%,100% { transform: translate3d(0,0,0); opacity: .22; } 50% { transform: translate3d(18px,-10px,0); opacity: .42; } }
+@keyframes dataDrift { from { background-position: 0 0, 30px 20px, 60px 50px; } to { background-position: 180px 90px, 180px 140px, 280px 160px; } }
+@keyframes verifyPulse { 0% { box-shadow: 0 0 0 0 #69d17d80; } 80%,100% { box-shadow: 0 0 0 9px transparent; } }
+@keyframes lineSweep { 0%,45% { transform: translateX(-100%); } 70%,100% { transform: translateX(100%); } }
+
+/* interactive output inspector */
+.interactive-mock { grid-template-columns: 210px minmax(0, 1fr) 230px; align-items: stretch; }
+.mock-list { display: flex; flex-direction: column; }
+.mock-agent { width: 100%; border: 0; text-align: left; cursor: pointer; font-family: var(--sans); transition: transform .18s ease, background .18s ease, box-shadow .18s ease; }
+.mock-agent b { display: block; color: #24272d; font-size: 12px; margin-bottom: 2px; }
+.mock-agent small { display: block; color: #737982; font-size: 10.5px; line-height: 1.25; }
+.mock-agent.active { background: #fff; box-shadow: inset 0 0 0 1px #18d7e655, 0 10px 30px #18d7e612; transform: translateX(4px); }
+.mock-agent.active .mock-dot { box-shadow: 0 0 0 5px #18d7e61c, 0 0 18px #18d7e666; }
+.mock-output { display: flex; flex-direction: column; justify-content: space-between; min-height: 250px; }
+.mock-output h3 { font-size: clamp(20px, 2.4vw, 31px); line-height: 1.02; letter-spacing: -.045em; margin: 4px 0 14px; color: #202124; }
+.mock-output p { color: #5d636c; font-size: 13px; line-height: 1.55; max-width: 560px; }
+.mock-signal-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 20px; }
+.mock-signal-grid span { border-radius: 12px; background: #edf1f2; border: 1px solid #dce1e3; color: #3e454d; padding: 11px 10px; font-size: 11px; font-weight: 700; }
+.mock-proof { min-height: 250px; display: flex; flex-direction: column; }
+.mock-proof .mock-cta { display: flex; align-items: center; justify-content: center; color: #031316; font-size: 11px; font-weight: 800; margin-top: auto; }
+.mock-swap { animation: mockSwap .34s cubic-bezier(.2,.8,.2,1); }
+@keyframes mockSwap { from { opacity: .45; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 900px) { .interactive-mock { grid-template-columns: 1fr; } .mock-signal-grid { grid-template-columns: 1fr; } .mock-agent.active { transform: none; } }

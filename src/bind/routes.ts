@@ -38,6 +38,7 @@ bindRouter.get("/config", (_req, res) => {
     chainId: 196,
     chainIdHex: "0xc4",
     requiresPayment: !ALLOW_FREE,
+    paymentConfigured: config.payToAddress !== "" && config.usdtAsset !== "",
   });
 });
 
@@ -155,3 +156,5 @@ bindRouter.get("/search", async (req, res) => {
     res.status(422).json({ error: "search_failed", message: (e as Error).message });
   }
 });
+
+

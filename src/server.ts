@@ -14,6 +14,7 @@ const PUBLIC_DIR = join(__dirname, "..", "public");
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
+app.use(express.static(PUBLIC_DIR));
 
 // CORS — allow frontend on Vercel to call this API
 app.use((_req, res, next) => {

@@ -198,6 +198,7 @@
     .goal-actions { flex-direction: column; }
   }
 </style>
+<link rel="stylesheet" href="/bind-theme.css">
 </head>
 <body>
 <div class="wrap">
@@ -212,77 +213,104 @@
 
   <div id="landing">
   <section class="hero" id="top">
-    <div class="pill"><span class="pip"></span> Powered by OKX AI · X Layer</div>
-    <h1 class="headline">The general contractor for the agent economy.</h1>
-    <p class="sub">Hand Bind a goal. It commissions a vetted crew of on-chain agents from the OKX marketplace, pays each via x402, inspects every output, and delivers one finished result — with an on-chain receipt for every payment. Only work that passes verification makes it into your result.</p>
-
-    <div class="hero-cta">
-      <button class="btn-cyan" onclick="openApp()">Start a mission →</button>
-      <a class="btn-outline" href="?exec=1dca02fd-991c-44c0-88c6-717656cfdeca">See a real mission →</a>
+    <div class="hero-copy">
+      <div class="pill hero-provenance">Built for OKX AI Genesis <span>On X Layer</span></div>
+      <h1 class="headline">Hire agent crews that actually deliver.</h1>
+      <p class="sub">Describe the outcome. Bind plans the crew, pays vetted marketplace agents on X Layer, verifies every result, and returns one finished deliverable with an on-chain receipt.</p>
+      <div class="hero-cta">
+        <button class="btn-cyan" onclick="openApp()">Start a mission</button>
+        <a class="btn-outline" href="?exec=1dca02fd-991c-44c0-88c6-717656cfdeca">See proof</a>
+      </div>
+      <div class="chips" style="justify-content:center;max-width:620px;margin:18px auto 0">
+        <span class="chip" onclick="openApp('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">BTC market brief</span>
+        <span class="chip" onclick="openApp('What are the widest crypto funding-rate arbitrage opportunities right now?')">Funding arb scan</span>
+        <span class="chip" onclick="openApp('Scan this token for rug-pull risk and contract red flags: 0x779ded0c9e1022225f8e0630b35a9b54be713736')">Token risk scan</span>
+      </div>
     </div>
-    <div class="chips" style="justify-content:center;max-width:560px;margin:18px auto 0">
-      <span class="chip" onclick="openApp('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">BTC market brief</span>
-      <span class="chip" onclick="openApp('What are the widest crypto funding-rate arbitrage opportunities right now?')">Funding arb scan</span>
-      <span class="chip" onclick="openApp('What is the current DeFi market landscape — total market cap, dominance, and leading protocols?')">DeFi macro overview</span>
+    <div class="hero-stage" aria-hidden="true">
+      <img class="brand-seal-img" src="/brand/bind-seal.png" alt="">
+      <div class="side-card left"><div class="mini-line short"></div><div class="mini-line"></div><div class="mini-line"></div><span class="mini-pill">agent search</span></div>
+      <div class="product-shot">
+        <div class="browser-bar"><div class="traffic"><span></span><span></span><span></span></div><span>bind://mission-console</span></div>
+        <div class="terminal">
+          <div class="rail"><div class="mini-line short"></div><div class="mini-line"></div><div class="mini-line"></div><div class="rail-card">Goal<br><strong>Market brief on BTC</strong></div><div class="rail-card">Quote<br><strong>$0.143 USDT</strong></div></div>
+          <div class="console-grid">
+            <div class="mission-row"><span>Security &amp; risk scan</span><span>x402 paid</span><span>verified</span></div>
+            <div class="mission-row"><span>Market data specialist</span><span>x402 paid</span><span>verified</span></div>
+            <div class="mission-row"><span>Sentiment oracle</span><span>x402 paid</span><span>verified</span></div>
+            <div class="flow-line"><div class="flow-node"><b>Plan</b>Pick the crew</div><div class="flow-node"><b>Pay</b>Settle on X Layer</div><div class="flow-node"><b>Verify</b>Drop bad output</div><div class="flow-node"><b>Deliver</b>Anchor receipt</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="side-card right"><div class="mini-line"></div><div class="mini-line short"></div><span class="mini-pill">receipt anchored</span></div>
     </div>
   </section>
 
-  <section class="how" id="how">
-    <p class="section-eyebrow">How it works</p>
-    <h2 class="section-h">You describe the outcome. Bind executes the process.</h2>
-    <div class="steps-grid">
-      <div class="step-card">
-        <p class="n">01</p><p class="t">Plan</p>
-        <p class="d">Bind breaks your goal into steps and matches the right agents from the marketplace. One flat quote, no negotiation.</p>
+
+  <section class="brand-band white-band">
+    <div class="band-inner">
+      <p class="section-eyebrow">Launch identity</p>
+      <h2 class="section-h">A trust mark for commissioned agent work.</h2>
+      <p class="section-copy">The vintage certificate language is strong for X because it makes Bind feel less like another dashboard and more like a verified transaction layer.</p>
+      <div class="brand-showcase">
+        <img src="/brand/bind-wordmark-card.png" alt="Bind brand card: the verified way to commission on-chain agents">
       </div>
-      <div class="step-card">
-        <p class="n">02</p><p class="t">Execute</p>
-        <p class="d">Pays each agent on X Layer via x402, runs a verification gate between every step, and drops anything that fails instead of shipping it.</p>
-      </div>
-      <div class="step-card">
-        <p class="n">03</p><p class="t">Deliver</p>
-        <p class="d">Bundles verified outputs into one deliverable with an on-chain receipt spanning every agent and every payment.</p>
-      </div>
+    </div>
+  </section>
+  <section class="white-band">
+    <div class="band-inner">
+      <div class="logo-strip"><span>OKX AI</span><span>X Layer</span><span>x402</span><span>A2MCP</span><span>Agentic Wallet</span></div>
+      <p class="section-eyebrow">Agent orchestration decoded</p>
+      <h2 class="section-h">The marketplace has sellers. Bind is the buyer.</h2>
+      <p class="section-copy">Instead of asking users to discover agents, negotiate payments, retry broken endpoints, and stitch outputs together, Bind turns a goal into a verified multi-agent workflow.</p>
+      <div class="wide-showcase"><div class="light-screen"><div class="screen-header"><span class="screen-tab">Plan proposal</span><span class="screen-tab">Crew assignment</span><span class="screen-tab">Receipt preview</span></div><div class="mock-dashboard"><div class="mock-panel"><p class="mock-label">Crew</p><div class="mock-agent"><span class="mock-dot"></span>Market data</div><div class="mock-agent"><span class="mock-dot"></span>Sentiment</div><div class="mock-agent"><span class="mock-dot"></span>Risk verifier</div></div><div class="mock-panel"><p class="mock-label">Verified market brief</p><div class="mock-chart"></div><div class="form-mock" style="margin:14px 0 0;box-shadow:none"><div class="field"></div><div class="field small"></div><div class="form-button"></div></div></div><div class="mock-panel"><p class="mock-label">Receipt</p><div class="mock-receipt"><div><span>Agents</span><b>3</b></div><div><span>Total</span><b>$0.143</b></div><div><span>Anchor</span><b>X Layer</b></div></div><div class="mock-cta"></div></div></div></div></div>
+      <div class="quote-grid"><div><p class="quote">“We got from prompt to paid, verified agent work in one flow. That is the missing buyer experience.”</p><div class="metrics"><div class="metric"><b>14</b><span>tested payable agents</span></div><div class="metric"><b>1</b><span>flat user quote</span></div><div class="metric"><b>0</b><span>failed outputs shipped</span></div></div></div><div class="quote-card"><div class="avatar"></div><strong>Bind receipt</strong><span>Every agent payment and verification result is visible after execution.</span></div></div>
+    </div>
+  </section>
+
+  <section class="black-band" id="how">
+    <div class="band-inner">
+      <p class="section-eyebrow">Deploy the buyer</p>
+      <h2 class="section-h">Plan, pay, verify, deliver. In that order.</h2>
+      <p class="section-copy">Bind spends only after the buyer payment is verified, caps live agent overcharges, and excludes any output that fails inspection.</p>
+      <div class="deploy-panel"><div class="deploy-table"><div class="head"><span>step</span><span>agent role</span><span>payment</span><span>status</span></div><div><span>01</span><span>Marketplace routing</span><span>quote locked</span><span>ready</span></div><div><span>02</span><span>Data specialist</span><span>x402</span><span>passed</span></div><div><span>03</span><span>Sentiment specialist</span><span>x402</span><span>passed</span></div><div><span>04</span><span>Receipt anchor</span><span>X Layer</span><span>final</span></div></div></div>
+      <div class="steps-grid"><div class="step-card"><p class="n">01</p><p class="t">Plan</p><p class="d">AI routing picks a small, complementary crew from the tested payable set.</p></div><div class="step-card"><p class="n">02</p><p class="t">Execute</p><p class="d">Each call is paid through x402 only after the buyer funds the mission.</p></div><div class="step-card"><p class="n">03</p><p class="t">Deliver</p><p class="d">Verified outputs are synthesized into one answer and anchored on-chain.</p></div></div>
+    </div>
+  </section>
+
+  <section class="black-band">
+    <div class="band-inner">
+      <p class="section-eyebrow">Unleash your inner operator</p>
+      <h2 class="section-h">The developer console for the agent economy.</h2>
+      <p class="section-copy">Under the polished mission flow is a pragmatic payment-and-verification harness built for messy third-party agents.</p>
+      <div class="dev-grid"><div class="dark-card"><strong>Pay only what was quoted</strong><p>Live 402 challenges are decoded before signing, with hard caps to block surprise overcharges.</p></div><div class="dark-card"><strong>Trust the receipt</strong><p>Execution history, payment hashes, verified outputs, and the final report are stored together.</p></div></div>
+      <div class="integration-row"><span class="integration">OKX</span><span class="integration">402</span><span class="integration">XL</span><span class="integration">AI</span><span class="integration">TEE</span><span class="integration">API</span></div>
     </div>
   </section>
 
   <section class="uc" id="use-cases">
-    <p class="section-eyebrow">Use cases</p>
-    <h2 class="section-h">What Bind can hire agents for today</h2>
-    <div class="uc-grid" id="ucGrid">
-      <div class="uc-card" onclick="fillGoal('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">
-        <span class="uc-tag">Market</span><p class="t">Market Brief</p>
-        <p class="d">Crowd positioning, open interest, and cross-asset comparison synthesized from independent data agents.</p>
-      </div>
-      <div class="uc-card" onclick="fillGoal('What are the widest crypto funding-rate arbitrage opportunities right now?')">
-        <span class="uc-tag">Derivatives</span><p class="t">Funding Arbitrage</p>
-        <p class="d">Scans cross-venue funding-rate spreads to surface the widest arbitrage candidates right now.</p>
-      </div>
-      <div class="uc-card" onclick="fillGoal('What is the current DeFi market landscape — total market cap, dominance, and leading protocols?')">
-        <span class="uc-tag">DeFi</span><p class="t">DeFi Macro</p>
-        <p class="d">Aggregate DeFi picture: total market cap, its dominance of crypto, 24h volume, and the leading protocols.</p>
-      </div>
-      <div class="uc-card" onclick="fillGoal('Scan this token for rug-pull risk and contract red flags: 0x779ded0c9e1022225f8e0630b35a9b54be713736')">
-        <span class="uc-tag">Security</span><p class="t">Rug &amp; Risk Scan</p>
-        <p class="d">Independent rug-radar and on-chain contract checks, cross-verified before a verdict is written.</p>
-      </div>
-      <div class="uc-card" onclick="fillGoal('Give me a daily crypto market briefing')">
-        <span class="uc-tag">Briefing</span><p class="t">Daily Briefing</p>
-        <p class="d">A synthesized daily market thesis pulled from an independent briefing agent, cross-checked against live data.</p>
-      </div>
-      <div class="uc-card" onclick="fillGoal('Give me the current derivatives positioning across major coins')">
-        <span class="uc-tag">On-chain</span><p class="t">Derivatives Positioning</p>
-        <p class="d">Long/short account ratios and open interest across major coins, flagged for crowded-long or crowded-short risk.</p>
+    <div class="band-inner">
+      <p class="section-eyebrow">Templates</p>
+      <h2 class="section-h">Tackle your first use case with business-ready missions.</h2>
+      <p class="section-copy">Start with the workflows Bind can run today, then let the routing layer assemble the crew.</p>
+      <div class="uc-grid" id="ucGrid">
+        <div class="uc-card" onclick="fillGoal('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')"><span class="uc-tag">Market</span><p class="t">Market Brief</p><p class="d">Crowd positioning, open interest, and cross-asset comparison synthesized from independent data agents.</p></div>
+        <div class="uc-card" onclick="fillGoal('What are the widest crypto funding-rate arbitrage opportunities right now?')"><span class="uc-tag">Derivatives</span><p class="t">Funding Arbitrage</p><p class="d">Scans cross-venue funding-rate spreads to surface the widest arbitrage candidates right now.</p></div>
+        <div class="uc-card" onclick="fillGoal('What is the current DeFi market landscape — total market cap, dominance, and leading protocols?')"><span class="uc-tag">DeFi</span><p class="t">DeFi Macro</p><p class="d">Aggregate DeFi picture: total market cap, dominance, volume, and leading protocols.</p></div>
+        <div class="uc-card" onclick="fillGoal('Scan this token for rug-pull risk and contract red flags: 0x779ded0c9e1022225f8e0630b35a9b54be713736')"><span class="uc-tag">Security</span><p class="t">Rug &amp; Risk Scan</p><p class="d">Independent rug-radar and on-chain contract checks, cross-verified before a verdict is written.</p></div>
+        <div class="uc-card" onclick="fillGoal('Give me a daily crypto market briefing')"><span class="uc-tag">Briefing</span><p class="t">Daily Briefing</p><p class="d">A daily market thesis pulled from independent briefing agents and checked against live data.</p></div>
+        <div class="uc-card" onclick="fillGoal('Give me the current derivatives positioning across major coins')"><span class="uc-tag">On-chain</span><p class="t">Derivatives Positioning</p><p class="d">Long/short ratios and open interest across major coins, flagged for crowded risk.</p></div>
       </div>
     </div>
   </section>
 
+  <section class="black-band">
+    <div class="band-inner"><h2 class="section-h">Put the agent economy to work.</h2><p class="section-copy">Bind is live for OKX AI Genesis. Start a mission, see the crew, pay once, and get the receipt.</p><div class="hero-cta"><button class="btn-cyan" onclick="openApp()">Start a mission</button><a class="btn-outline" href="https://github.com/jenzylove/bind" target="_blank" rel="noopener">View GitHub</a></div></div>
+  </section>
+
   <footer class="foot">
     <div>Bind · Powered by OKX AI · Built on X Layer</div>
-    <div class="foot-links">
-      <a href="https://github.com/jenzylove/bind" target="_blank" rel="noopener">GitHub</a>
-      <a href="#" onclick="openApp();return false">Launch app</a>
-    </div>
+    <div class="foot-links"><a href="https://github.com/jenzylove/bind" target="_blank" rel="noopener">GitHub</a><a href="#" onclick="openApp();return false">Launch app</a></div>
   </footer>
   </div><!-- /landing -->
 
@@ -450,6 +478,19 @@ function hideError() { document.getElementById('errorMsg').classList.remove('vis
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1900); }
 function txLink(h) { return h && h.startsWith('0x') ? `<a href="${EXPLORER}${h}" target="_blank" rel="noopener">${h.slice(0,10)}…${h.slice(-6)}</a>` : (h || '—'); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function fetchJson(url, options = {}, timeoutMs = 25000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    const text = await res.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { message: text || 'Unexpected response' }; }
+    return { res, data };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function addLog(text, type) {
   const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -481,8 +522,7 @@ async function createPlan() {
   await sleep(300);
   addLog('Searching OKX ASP marketplace...', 'search');
   try {
-    const res = await fetch('/bind/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal }) });
-    const data = await res.json();
+    const { res, data } = await fetchJson('/bind/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal }) }, 25000);
     if (!res.ok) { addLog(`Error: ${data.message}`, 'error'); showError(data.message || 'Failed to create plan'); return; }
     if (!data.plan.steps.length) { addLog('No compatible agents found.', 'error'); showError(data.plan.note || 'No compatible agents found for this goal.'); return; }
     addLog(`${data.summary.agents} compatible agents found.`, 'search');
@@ -516,10 +556,13 @@ async function createPlan() {
     const cfg = await loadCfg();
     const eb = document.getElementById('execBtn');
     eb.style.display = 'block';
-    eb.disabled = false;
-    eb.textContent = (cfg.requiresPayment && data.plan.totalPriceUsdt > 0)
-      ? `Pay $${data.plan.totalPriceUsdt.toFixed(3)} & execute →`
-      : 'Execute mission →';
+    const paymentMissing = cfg.requiresPayment && data.plan.totalPriceUsdt > 0 && (cfg.paymentConfigured === false || !cfg.payTo || !cfg.usdtAsset);
+    eb.disabled = paymentMissing;
+    eb.textContent = paymentMissing
+      ? 'Payment config missing'
+      : (cfg.requiresPayment && data.plan.totalPriceUsdt > 0)
+        ? `Pay $${data.plan.totalPriceUsdt.toFixed(3)} & execute →`
+        : 'Execute mission →';
     document.getElementById('consoleSection').classList.add('visible');
     document.getElementById('consoleSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) { addLog('Failed to reach marketplace.', 'error'); showError(`Connection error: ${e.message}`); }
@@ -535,6 +578,11 @@ async function executePlan() {
   // Buyer-pays flow: connect wallet and pay the quote on-chain before executing.
   let paymentTxHash = null;
   if (cfg.requiresPayment && currentPlan.totalPriceUsdt > 0) {
+    if (cfg.paymentConfigured === false || !cfg.payTo || !cfg.usdtAsset) {
+      addLog('Payment configuration missing on this server.', 'error');
+      showError('Payment is not configured on this server yet. Set PAY_TO_ADDRESS and USDT_ASSET before testing with a real wallet.');
+      return;
+    }
     if (!wallet.address) {
       const a = await connectWallet();
       if (!a) { showError('Connect a wallet to pay for and run this mission.'); return; }
@@ -557,11 +605,10 @@ async function executePlan() {
 
   try {
     for (const step of currentPlan.steps) { addLog(`Calling ${step.agent.name}...`, 'info'); }
-    const res = await fetch('/bind/execute', {
+    const { res, data } = await fetchJson('/bind/execute', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ planId: currentPlan.planId, paymentTxHash }),
-    });
-    const data = await res.json();
+    }, 45000);
     if (!res.ok) { addLog(`Execution failed: ${data.message || ''}`, 'error'); showError(data.message || 'Execution failed'); btn.disabled = false; btn.innerHTML = 'Execute mission →'; return; }
     renderExecution(data, rows);
   } catch (e) { addLog('Execution error.', 'error'); showError(`Execution error: ${e.message}`); btn.disabled = false; btn.innerHTML = 'Execute mission →'; }
@@ -674,6 +721,24 @@ async function loadFromUrl() {
   } catch (e) {}
 }
 loadFromUrl();
+function initReveals() {
+  const targets = document.querySelectorAll('.white-band, .black-band, .wide-showcase, .quote-grid, .deploy-panel, .steps-grid, .dev-grid, .uc-grid, footer.foot');
+  targets.forEach((el) => el.classList.add('reveal'));
+  if (!('IntersectionObserver' in window)) {
+    targets.forEach((el) => el.classList.add('visible'));
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+  targets.forEach((el) => observer.observe(el));
+}
+initReveals();
 loadCfg();
 // Reflect an already-authorized wallet without prompting.
 if (window.ethereum) {
@@ -683,3 +748,16 @@ if (window.ethereum) {
 </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+

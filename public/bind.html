@@ -9,6 +9,8 @@
 <meta property="og:description" content="Describe a goal. Bind commissions a vetted crew of on-chain agents on X Layer, pays each via x402, inspects every output, and delivers one finished result — with an on-chain receipt for every payment.">
 <meta property="og:image" content="/brand/bind-wordmark-card.png">
 <meta name="twitter:card" content="summary_large_image">
+<!-- Favicon: the Bind seal, inlined so it needs no static route -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzIiIGZpbGw9IiNlN2RkYzciLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSIyOC41IiBmaWxsPSJub25lIiBzdHJva2U9IiMyMTFhMTIiIHN0cm9rZS13aWR0aD0iMiIvPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMyMTFhMTIiIHN0cm9rZS13aWR0aD0iMSIvPjx0ZXh0IHg9IjMyIiB5PSI0NCIgZm9udC1mYW1pbHk9Ikdlb3JnaWEsc2VyaWYiIGZvbnQtc2l6ZT0iMzIiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiMyMTFhMTIiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkI8L3RleHQ+PC9zdmc+">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -209,7 +211,7 @@
     <nav class="top-nav">
       <a href="#how" onclick="closeApp();document.getElementById('how').scrollIntoView({behavior:'smooth'});return false">How it works</a>
       <a href="#use-cases" onclick="closeApp();document.getElementById('use-cases').scrollIntoView({behavior:'smooth'});return false">Use cases</a>
-      <button id="walletBtn" class="nav-cta" onclick="connectWallet()" style="cursor:pointer;background:none;font-family:inherit">Connect wallet</button>
+      <button id="walletBtn" class="nav-cta" onclick="walletBtnClick()" style="cursor:pointer;background:none;font-family:inherit">Connect wallet</button>
     </nav>
   </header>
 
@@ -386,6 +388,20 @@ function setWalletBtn() {
   const b = document.getElementById('walletBtn');
   if (!b) return;
   b.textContent = wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : 'Connect wallet';
+  b.title = wallet.address ? 'Click to disconnect' : 'Connect a wallet to pay for missions';
+}
+
+// Clicking the pill connects when disconnected, and disconnects when connected.
+function walletBtnClick() {
+  if (wallet.address) { disconnectWallet(); return; }
+  connectWallet();
+}
+function disconnectWallet() {
+  wallet.address = null;
+  setWalletBtn();
+  toast('Wallet disconnected');
+  // Best-effort: ask the wallet to forget the approval so the next connect re-prompts.
+  try { window.ethereum?.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] }).catch(() => {}); } catch (e) {}
 }
 
 async function connectWallet() {
@@ -413,11 +429,22 @@ async function ensureXLayer() {
   }
 }
 
-// Sends the plan's quoted USDT total to Bind's wallet, returns the tx hash once mined.
+// Sends the plan's quoted USDT total to Bind's wallet, returns the tx hash once the
+// transaction is mined AND succeeded.
 async function payForPlan(cfg) {
-  await ensureXLayer();
+  // Never build a transfer without a real destination: an empty payTo would pad to the
+  // zero address and the USDT transfer would revert (burning gas for nothing).
+  if (!/^0x[0-9a-fA-F]{40}$/.test(cfg.payTo || '')) {
+    throw new Error('Bind is not configured to receive payments right now (no valid pay-to address). Nothing was sent.');
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(cfg.usdtAsset || '')) {
+    throw new Error('Payment token is not configured. Nothing was sent.');
+  }
   const amount = BigInt(Math.round(currentPlan.totalPriceUsdt * 1e6));
-  const to = cfg.payTo.slice(2).padStart(64, '0');
+  if (amount <= 0n) throw new Error('This plan has no payable amount.');
+
+  await ensureXLayer();
+  const to = cfg.payTo.toLowerCase().replace(/^0x/, '').padStart(64, '0');
   const amt = amount.toString(16).padStart(64, '0');
   const data = '0xa9059cbb' + to + amt;
   addLog(`Requesting $${currentPlan.totalPriceUsdt.toFixed(3)} USDT payment approval…`, 'info');
@@ -426,19 +453,24 @@ async function payForPlan(cfg) {
   }] });
   addLog(`Payment sent: ${txHash.slice(0,10)}…`, 'paid');
   addLog('Waiting for on-chain confirmation…', 'info');
-  await waitForReceipt(txHash);
+  const ok = await waitForReceipt(txHash);
+  // A reverted tx still gets a blockNumber — only status 0x1 means it actually paid.
+  if (ok === false) throw new Error('The payment transaction failed on-chain (reverted). You were not charged — check your USDT balance and that you have OKB for gas.');
+  if (ok === null) throw new Error('Payment not confirmed in time. If it lands, retry — you will not be double-charged.');
   addLog('Payment confirmed on X Layer', 'verified');
   return txHash;
 }
 
+// true = mined & succeeded, false = mined & reverted, null = timed out.
 async function waitForReceipt(txHash) {
   for (let i = 0; i < 40; i++) {
     try {
       const r = await window.ethereum.request({ method: 'eth_getTransactionReceipt', params: [txHash] });
-      if (r && r.blockNumber) return;
+      if (r && r.blockNumber) return r.status === '0x1' || r.status === 1;
     } catch (e) {}
     await sleep(1500);
   }
+  return null;
 }
 
 function openApp(goal) {

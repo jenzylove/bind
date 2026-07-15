@@ -63,16 +63,30 @@ export function agentReputation(): Map<string, AgentRep> {
   return reps;
 }
 
-/** Human-readable track record for one agent, or null when it has never been hired. */
-export function repFor(agentId: string): AgentRep | null {
-  return agentReputation().get(agentId) ?? null;
+/** Track record for one agent. Older records predate agentId, so we resolve by name too. */
+export function repFor(agentId: string, name?: string): AgentRep | null {
+  const reps = agentReputation();
+  const byId = reps.get(agentId);
+  if (byId) return byId;
+  if (name) for (const r of reps.values()) if (r.name === name) return r;
+  return null;
 }
 
 /** Compact line for the routing prompt, e.g. "94% verified over 17 missions". */
-export function repSummary(agentId: string): string | null {
-  const r = repFor(agentId);
+export function repSummary(agentId: string, name?: string): string | null {
+  const r = repFor(agentId, name);
   if (!r || r.missions < 2) return null;   // one data point is not a track record
   return `${Math.round(r.passRate * 100)}% verified over ${r.missions} missions`;
+}
+
+// An agent with a real, repeated record of never delivering should not be hired again,
+// no matter how well it matches the goal. This is the ledger doing its job: Optic AI took
+// payment on 5 missions and delivered verified work on none of them.
+const MIN_EVIDENCE = 3;
+const FIRE_BELOW = 0.34;
+export function isProvenBad(agentId: string, name?: string): boolean {
+  const r = repFor(agentId, name);
+  return !!r && r.missions >= MIN_EVIDENCE && r.passRate < FIRE_BELOW;
 }
 
 export function allReputation(): AgentRep[] {

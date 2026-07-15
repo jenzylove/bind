@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { BindPlan, BindStep, PlanRequest } from "./types.js";
 import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceService } from "./marketplace.js";
 import { selectAgents, type SelectCandidate } from "./select.js";
-import { repSummary } from "./reputation.js";
+import { repSummary, isProvenBad } from "./reputation.js";
 
 // Guardrails so an auto-plan is never surprising or nonsensical.
 const PER_STEP_FEE_CEILING = 0.60;   // ceiling for tested-payable agents
@@ -101,6 +101,8 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   const eligible = scored.filter(({ agent }) => {
     if (agent.services.length === 0) return false;
     if (EXCLUDE_IDS.has(agent.agentId)) return false; // settle-but-unusable (MCP/topup) — never route to these
+    // Fired by its own record: repeatedly hired, never delivered verified work.
+    if (isProvenBad(agent.agentId, agent.name)) return false;
     const fee = chosenService(agent).feeAmount;
     const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
     // Tested-payable agents get the full ceiling; unproven agents are capped low so a
@@ -136,7 +138,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       service: svc.serviceName,
       cheapestFee: svc.feeAmount,
       payable: PAYABLE_AGENT_IDS.has(agent.agentId),
-      track: repSummary(agent.agentId),
+      track: repSummary(agent.agentId, agent.name),
     };
   });
   // Cap the crew at 3. The router used to pad to 4, which hired near-duplicate agents
@@ -220,7 +222,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       agentServiceDescription,
       boundParams: PAYABLE_ENDPOINTS.get(agent.agentId)?.params ?? undefined,
       // Shown to the buyer so the crew is justified by evidence, not vibes.
-      track: repSummary(agent.agentId) ?? undefined,
+      track: repSummary(agent.agentId, agent.name) ?? undefined,
       fallbackAgent: backup && backupSvc ? {
         agentId: backup.agentId,
         name: backup.name,

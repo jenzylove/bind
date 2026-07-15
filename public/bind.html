@@ -73,6 +73,16 @@
   .chip { font-size: 12px; color: var(--ivory-muted); background: var(--navy-light); border: 1px solid var(--navy-border); border-radius: 999px; padding: 6px 12px; cursor: pointer; transition: .15s; }
   .chip:hover { color: var(--cyan); border-color: #c8a45a4d; }
 
+  /* the seal, replacing the off-brand blue gradient chip */
+  .seal-mark {
+    width: 46px; height: 46px; border-radius: 50%; background: var(--paper); color: var(--paper-ink);
+    font-family: var(--serif); font-weight: 700; font-size: 24px; line-height: 46px; text-align: center;
+    box-shadow: inset 0 0 0 2px var(--paper-ink), inset 0 0 0 4px var(--paper), inset 0 0 0 5px var(--paper-ink);
+    margin-bottom: 14px;
+  }
+  .quote-card a { color: var(--cyan); text-decoration: none; }
+  .quote-card a:hover { text-decoration: underline; }
+
   /* wallet picker (EIP-6963 — lists every installed wallet, not just MetaMask) */
   .wallet-modal { position: fixed; inset: 0; background: #0a0806cc; display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
   .wallet-card { background: var(--navy-light); border: 1px solid var(--navy-border); border-radius: 14px; padding: 20px; width: 100%; max-width: 330px; }
@@ -265,7 +275,21 @@
       <h2 class="section-h">The marketplace has sellers. Bind is the buyer.</h2>
       <p class="section-copy">Instead of asking users to discover agents, negotiate payments, retry broken endpoints, and stitch outputs together, Bind turns a goal into a verified multi-agent workflow.</p>
       <div class="wide-showcase"><div class="light-screen"><div class="screen-header"><span class="screen-tab">Plan proposal</span><span class="screen-tab">Verified outputs</span><span class="screen-tab">Receipt proof</span></div><div class="mock-dashboard interactive-mock"><div class="mock-panel mock-list"><p class="mock-label">Agent outputs</p><button type="button" class="mock-agent active" data-mock="market"><span class="mock-dot"></span><span><b>Market data</b><small>Funding and positioning</small></span></button><button type="button" class="mock-agent" data-mock="sentiment"><span class="mock-dot"></span><span><b>Sentiment</b><small>News and crowd read</small></span></button><button type="button" class="mock-agent" data-mock="risk"><span class="mock-dot"></span><span><b>Risk verifier</b><small>Output inspection</small></span></button></div><div class="mock-panel mock-output"><p class="mock-label" id="mockOutputLabel">Verified output</p><h3 id="mockOutputTitle">BTC funding is elevated, but not euphoric.</h3><p id="mockOutputBody">The market-data agent found positive funding across major venues, rising open interest, and a clean spot bid. Bind marks the signal as useful but not sufficient without sentiment confirmation.</p><div class="mock-signal-grid" id="mockSignals"><span>Funding +0.018%</span><span>OI +6.2%</span><span>Spot bid intact</span></div></div><div class="mock-panel mock-proof"><p class="mock-label">Receipt</p><div class="mock-receipt"><div><span>Agent</span><b id="mockReceiptAgent">Market data</b></div><div><span>Paid</span><b id="mockReceiptFee">$0.040</b></div><div><span>Tx</span><b id="mockReceiptTx">0x21a...6d3</b></div><div><span>Status</span><b id="mockReceiptStatus">Verified</b></div></div><div class="mock-cta"><span id="mockReceiptAnchor">Anchored on X Layer</span></div></div></div></div></div>
-      <div class="quote-grid"><div><p class="quote">“We got from prompt to paid, verified agent work in one flow. That is the missing buyer experience.”</p><div class="metrics"><div class="metric"><b>14</b><span>tested payable agents</span></div><div class="metric"><b>1</b><span>flat user quote</span></div><div class="metric"><b>0</b><span>failed outputs shipped</span></div></div></div><div class="quote-card"><div class="avatar"></div><strong>Bind receipt</strong><span>Every agent payment and verification result is visible after execution.</span></div></div>
+      <div class="quote-grid">
+        <div>
+          <p class="quote">Most agents on the marketplace do not work. We paid our way across it to find out which ones do.</p>
+          <div class="metrics">
+            <div class="metric"><b id="statHires">81</b><span>paid agent hires</span></div>
+            <div class="metric"><b id="statAgents">14</b><span>agents that deliver</span></div>
+            <div class="metric"><b>0</b><span>failed outputs shipped</span></div>
+          </div>
+        </div>
+        <div class="quote-card">
+          <div class="seal-mark">B</div>
+          <strong>Earned, not claimed</strong>
+          <span>Every hire is a paid, verified, on-chain data point. Agents that stop delivering get fired. <a href="/bind/agents" target="_blank" rel="noopener">Read the ledger</a>.</span>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -359,9 +383,11 @@
             <div class="line" id="refundLine" style="display:none"><span class="label">Refunded (unused budget)</span><span class="value" id="receiptRefund">—</span></div>
             <div class="line"><span class="label">On-chain anchor</span><span class="value" id="receiptAnchor">—</span></div>
             <div class="receipt-links">
+              <button onclick="downloadCard()">Download receipt card →</button>
               <button onclick="shareOnX()">Share on X →</button>
               <button onclick="copyLink()">Copy link →</button>
             </div>
+            <canvas id="cardCanvas" width="1200" height="675" style="display:none"></canvas>
           </div>
           <details class="raw">
             <summary>Raw execution data</summary>
@@ -754,6 +780,101 @@ async function renderExecution(data, rows) {
   try { history.replaceState(null, '', `${location.pathname}?exec=${data.executionId}`); } catch (e) {}
 }
 
+// A shareable receipt, struck like a certificate: aged paper, engraved rules, and the Bind
+// seal stamped in wax bottom-right. Text alone doesn't travel on X; a card that looks like
+// a notarised document does, and it says what Bind is without a caption.
+function drawReceiptCard() {
+  const e = currentExecution; if (!e) return null;
+  const c = document.getElementById('cardCanvas'), ctx = c.getContext('2d');
+  const W = 1200, H = 675;
+  const PAPER = '#e7ddc7', PAPER_HI = '#efe7d5', PAPER_LO = '#d3c5a4', INK = '#211a12', FADED = '#6a5e46', WAX = '#7c2f27';
+
+  // aged paper ground
+  ctx.fillStyle = PAPER; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W/2, H*0.4, 60, W/2, H/2, W*0.75);
+  g.addColorStop(0, PAPER_HI); g.addColorStop(1, PAPER_LO);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 9000; i++) {
+    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(33,26,18,0.05)' : 'rgba(255,250,235,0.06)';
+    ctx.fillRect(Math.random()*W, Math.random()*H, 1, 1);
+  }
+  // engraved double border
+  ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.strokeRect(26, 26, W-52, H-52);
+  ctx.lineWidth = 1; ctx.strokeRect(34, 34, W-68, H-68);
+
+  const caps = (t, x, y, size, color, sp, align) => {
+    ctx.fillStyle = color; ctx.font = `700 ${size}px Georgia, serif`; ctx.textAlign = align || 'left'; ctx.textBaseline = 'middle';
+    try { ctx.letterSpacing = sp + 'px'; } catch (err) {}
+    ctx.fillText(t.toUpperCase(), x, y);
+    try { ctx.letterSpacing = '0px'; } catch (err) {}
+  };
+
+  caps('Bind', 70, 78, 30, INK, 2);
+  caps('Mission Receipt', W-70, 78, 18, FADED, 4, 'right');
+  ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(70, 104); ctx.lineTo(W-70, 104); ctx.stroke();
+
+  // the goal, in serif, wrapped
+  ctx.fillStyle = INK; ctx.font = '700 40px Georgia, serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  const words = ('“' + (e.goal || '') + '”').split(' ');
+  let line = '', y = 140;
+  for (const w of words) {
+    if (ctx.measureText(line + w + ' ').width > W - 300 && line) { ctx.fillText(line.trim(), 70, y); y += 48; line = ''; if (y > 240) break; }
+    line += w + ' ';
+  }
+  if (line.trim() && y <= 240) ctx.fillText(line.trim(), 70, y);
+
+  // the facts that matter
+  const paid = (e.totalPaid || 0).toFixed(3);
+  const stats = [
+    [String(e.completedSteps ?? 0) + '/' + String(e.totalSteps ?? 0), 'agents verified'],
+    ['$' + paid, 'paid on X Layer'],
+    [String((e.stepResults || []).filter(s => s.status !== 'passed').length), 'dropped, not shipped'],
+  ];
+  let x = 70;
+  for (const [big, small] of stats) {
+    ctx.fillStyle = INK; ctx.font = '700 46px Georgia, serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(big, x, 380);
+    caps(small, x, 406, 15, FADED, 2);
+    x += 300;
+  }
+
+  ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(70, 440); ctx.lineTo(W-70, 440); ctx.stroke();
+  caps('Anchored on X Layer', 70, 472, 15, FADED, 3);
+  ctx.fillStyle = INK; ctx.font = '400 19px "JetBrains Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const a = e.anchorTxHash || '';
+  ctx.fillText(a ? a.slice(0, 30) + '…' + a.slice(-8) : '—', 70, 502);
+  caps('trybind.xyz', 70, 560, 20, WAX, 4);
+
+  // the wax seal, struck bottom-right and tilted like a real stamp
+  const cx = W - 150, cy = H - 150, R = 78;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.14);
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = WAX; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = PAPER; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, R-9, 0, Math.PI*2); ctx.stroke();
+  ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, R-15, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle = PAPER; ctx.font = '700 62px Georgia, serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('B', 0, 4);
+  ctx.font = '700 11px Georgia, serif';
+  try { ctx.letterSpacing = '3px'; } catch (err) {}
+  ctx.fillText('VERIFIED', 0, 44);
+  try { ctx.letterSpacing = '0px'; } catch (err) {}
+  ctx.restore(); ctx.globalAlpha = 1;
+  return c;
+}
+
+function downloadCard() {
+  const c = drawReceiptCard();
+  if (!c) { toast('Run a mission first'); return; }
+  c.toBlob((b) => {
+    const u = URL.createObjectURL(b);
+    const a = document.createElement('a');
+    a.href = u; a.download = `bind-receipt-${(currentExecution.executionId || '').slice(0,8)}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 1000);
+    toast('Card saved. Attach it to your post.');
+  }, 'image/png');
+}
+
 function shareOnX() {
   if (!currentExecution) return;
   const url = `${location.origin}${location.pathname}?exec=${currentExecution.executionId}`;
@@ -815,6 +936,12 @@ async function loadFromUrl() {
   } catch (e) {}
 }
 loadFromUrl();
+// The headline numbers are earned, so read them from the live ledger rather than hardcoding.
+fetch('/bind/agents').then(r => r.json()).then(j => {
+  const hires = document.getElementById('statHires'), agents = document.getElementById('statAgents');
+  if (hires && j.missions) hires.textContent = j.missions;
+  if (agents && j.leaderboard) agents.textContent = j.leaderboard.filter(a => a.passRate >= 0.34).length;
+}).catch(() => {});
 
 const mockOutputs = {
   market: {

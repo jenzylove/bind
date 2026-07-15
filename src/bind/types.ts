@@ -71,6 +71,9 @@ export interface BindExecution {
   executionId: string;
   planId: string;
   goal: string;
+  /** Agent budget quoted but never spent, returned to the buyer on-chain. */
+  refundedUsdt?: number;
+  refundTxHash?: string;
   status: "running" | "completed" | "failed" | "partial";
   stepResults: ExecutionResult[];
   finalOutput?: string;

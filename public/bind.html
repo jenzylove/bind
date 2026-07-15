@@ -298,7 +298,7 @@
         <div class="uc-card" onclick="fillGoal('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')"><span class="uc-tag">Market</span><p class="t">Market Brief</p><p class="d">Crowd positioning, open interest, and cross-asset comparison synthesized from independent data agents.</p></div>
         <div class="uc-card" onclick="fillGoal('What are the widest crypto funding-rate arbitrage opportunities right now?')"><span class="uc-tag">Derivatives</span><p class="t">Funding Arbitrage</p><p class="d">Scans cross-venue funding-rate spreads to surface the widest arbitrage candidates right now.</p></div>
         <div class="uc-card" onclick="fillGoal('What is the current DeFi market landscape — total market cap, dominance, and leading protocols?')"><span class="uc-tag">DeFi</span><p class="t">DeFi Macro</p><p class="d">Aggregate DeFi picture: total market cap, dominance, volume, and leading protocols.</p></div>
-        <div class="uc-card" onclick="fillGoal('Scan this token for rug-pull risk and contract red flags: 0x779ded0c9e1022225f8e0630b35a9b54be713736')"><span class="uc-tag">Security</span><p class="t">Rug &amp; Risk Scan</p><p class="d">Independent rug-radar and on-chain contract checks, cross-verified before a verdict is written.</p></div>
+        <div class="uc-card" onclick="fillGoal('How are Bitcoin miners doing on revenue and hashprice right now?')"><span class="uc-tag">Miners</span><p class="t">Miner Economics</p><p class="d">Miner revenue and hashprice from a dedicated specialist, verified before it counts.</p></div>
         <div class="uc-card" onclick="fillGoal('Give me a daily crypto market briefing')"><span class="uc-tag">Briefing</span><p class="t">Daily Briefing</p><p class="d">A daily market thesis pulled from independent briefing agents and checked against live data.</p></div>
         <div class="uc-card" onclick="fillGoal('Give me the current derivatives positioning across major coins')"><span class="uc-tag">On-chain</span><p class="t">Derivatives Positioning</p><p class="d">Long/short ratios and open interest across major coins, flagged for crowded risk.</p></div>
       </div>
@@ -356,6 +356,7 @@
             <div class="line"><span class="label">Agents used</span><span class="value" id="receiptAgents">—</span></div>
             <div class="line"><span class="label">Total cost</span><span class="value" id="receiptTotal">0 USDT</span></div>
             <div class="line"><span class="label">Execution ID</span><span class="value" id="receiptId">—</span></div>
+            <div class="line" id="refundLine" style="display:none"><span class="label">Refunded (unused budget)</span><span class="value" id="receiptRefund">—</span></div>
             <div class="line"><span class="label">On-chain anchor</span><span class="value" id="receiptAnchor">—</span></div>
             <div class="receipt-links">
               <button onclick="shareOnX()">Share on X →</button>
@@ -743,6 +744,11 @@ async function renderExecution(data, rows) {
   document.getElementById('receiptTotal').textContent = `$${(data.totalPaid||0).toFixed(3)} USDT`;
   document.getElementById('receiptId').textContent = data.executionId.slice(0, 8);
   document.getElementById('receiptAnchor').innerHTML = txLink(data.anchorTxHash);
+  if (data.refundedUsdt > 0) {
+    document.getElementById('refundLine').style.display = 'flex';
+    document.getElementById('receiptRefund').innerHTML =
+      `+$${data.refundedUsdt.toFixed(3)} ${data.refundTxHash ? '· ' + txLink(data.refundTxHash) : ''}`;
+  }
 
   document.getElementById('resultOutput').textContent = JSON.stringify(data, null, 2);
   try { history.replaceState(null, '', `${location.pathname}?exec=${data.executionId}`); } catch (e) {}
@@ -797,6 +803,11 @@ async function loadFromUrl() {
     document.getElementById('receiptTotal').textContent = `$${(data.totalPaid||0).toFixed(3)} USDT`;
     document.getElementById('receiptId').textContent = data.executionId.slice(0,8);
     document.getElementById('receiptAnchor').innerHTML = txLink(data.anchorTxHash);
+  if (data.refundedUsdt > 0) {
+    document.getElementById('refundLine').style.display = 'flex';
+    document.getElementById('receiptRefund').innerHTML =
+      `+$${data.refundedUsdt.toFixed(3)} ${data.refundTxHash ? '· ' + txLink(data.refundTxHash) : ''}`;
+  }
     document.getElementById('resultOutput').textContent = JSON.stringify(data, null, 2);
     currentExecution = data;
     document.getElementById('consoleSection').classList.add('visible');

@@ -17,7 +17,13 @@ const DIR = process.env.BIND_DATA_DIR ?? "data";
 const USED_FILE = join(DIR, "used-payments.json");
 const ERC20_TRANSFER = "0xa9059cbb"; // transfer(address,uint256)
 
-export interface PaymentVerdict { ok: boolean; reason?: string; amount?: number; }
+export interface PaymentVerdict {
+  ok: boolean;
+  reason?: string;
+  amount?: number;
+  /** Who paid. Needed to refund any agent budget the mission never spends. */
+  payer?: string;
+}
 
 async function rpc(method: string, params: unknown[]): Promise<any> {
   const controller = new AbortController();
@@ -53,6 +59,26 @@ export function paymentAlreadyUsed(hash: string): boolean {
   return loadUsed().has((hash || "").toLowerCase());
 }
 
+// keccak256("Transfer(address,address,uint256)")
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+function topicToAddress(t: string): string { return "0x" + t.slice(-40); }
+
+/**
+ * The real payer, read from the USDT Transfer log rather than tx.from. Payments on X Layer
+ * are commonly relayed (the buyer signs, a relayer submits and pays gas), so tx.from is
+ * the relayer. Refunding that address would send the buyer's money to a bundler.
+ */
+function payerFromReceipt(receipt: any): string | undefined {
+  for (const log of receipt?.logs ?? []) {
+    if (String(log.address).toLowerCase() !== USDT) continue;
+    const topics: string[] = log.topics ?? [];
+    if (topics[0]?.toLowerCase() !== TRANSFER_TOPIC || topics.length < 3) continue;
+    if (topicToAddress(topics[2]).toLowerCase() !== BIND_WALLET) continue; // the leg paying us
+    return topicToAddress(topics[1]);
+  }
+  return undefined;
+}
+
 // minUsdt: the plan's quoted total. amountUsdt is derived from 6-decimal USDT base units.
 export async function verifyPayment(txHash: string, minUsdt: number): Promise<PaymentVerdict> {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHash || "")) return { ok: false, reason: "invalid transaction hash" };
@@ -79,5 +105,8 @@ export async function verifyPayment(txHash: string, minUsdt: number): Promise<Pa
   if (receipt.status !== "0x1") return { ok: false, reason: "payment transaction failed on-chain" };
 
   markUsed(h);
-  return { ok: true, amount };
+  // tx.from is the account that submitted; for a relayed/sponsored payment that can be a
+  // relayer, so prefer the ERC-20 Transfer log's `from` topic (the real payer).
+  const payer = payerFromReceipt(receipt) ?? (tx.from as string | undefined);
+  return { ok: true, amount, payer };
 }

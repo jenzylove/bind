@@ -13,6 +13,7 @@ import { verifyStepOutput } from "./verify.js";
 import { anchorExecution } from "./receipt.js";
 import { inferParams } from "./agent-infer.js";
 import { synthesizeDeliverable, type AgentOutput } from "./synthesize.js";
+import { refundUnspent } from "./refund.js";
 
 const execFileAsync = promisify(execFile);
 const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
@@ -247,7 +248,7 @@ function safeJson(text: string): unknown {
   try { return JSON.parse(text || "{}"); } catch { return text; }
 }
 
-export async function executePlan(plan: BindPlan): Promise<BindExecution> {
+export async function executePlan(plan: BindPlan, payer?: string): Promise<BindExecution> {
   await walletLogin();
 
   // Guard: never start paying agents unless the wallet can cover the whole plan. This
@@ -336,6 +337,17 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
     totalPaid, totalSteps: stepResults.length, completedSteps: completed,
     createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
   };
+
+  // Return whatever agent budget the mission never spent. The buyer prepaid the quote; any
+  // agent that flaked was never paid, and keeping that money would be charging for work
+  // nobody did. Bind's platform fee is earned and stays. Best-effort: a refund failure
+  // never fails the mission.
+  const quotedAgentCost = plan.agentCost ?? plan.steps.reduce((s, x) => s + x.agent.feeAmount, 0);
+  const refund = await refundUnspent(quotedAgentCost, totalPaid, payer);
+  if (refund.refunded > 0) {
+    execution.refundedUsdt = refund.refunded;
+    execution.refundTxHash = refund.txHash;
+  }
 
   // Anchor a signed receipt of the whole execution on X Layer (real tx).
   const anchor = await anchorExecution(execution);

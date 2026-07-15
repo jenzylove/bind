@@ -89,6 +89,7 @@ bindRouter.post("/execute", async (req, res) => {
 
     // Verify the user paid the quote on-chain before we spend anything. Free plans (total
     // 0) and the internal sponsored-demo flag skip this.
+    let payer: string | undefined;
     if (!ALLOW_FREE && plan.totalPriceUsdt > 0) {
       const paymentTxHash = (body as { paymentTxHash?: string }).paymentTxHash;
       if (!paymentTxHash) {
@@ -105,9 +106,10 @@ bindRouter.post("/execute", async (req, res) => {
         res.status(402).json({ error: "payment_invalid", message: `Payment could not be verified: ${verdict.reason}` });
         return;
       }
+      payer = verdict.payer; // so unspent agent budget can go back to whoever paid
     }
 
-    const execution = await executePlan(plan);
+    const execution = await executePlan(plan, payer);
     executions.set(execution.executionId, execution);
     saveExecution(execution);
 

@@ -631,7 +631,7 @@ async function createPlan() {
           <span class="step-dot"></span>
           <div class="step-info">
             <div class="name">${hireLabel(step)}</div>
-            <div class="detail">${capLabel(step.agent.category)} · vetted, verified before it counts</div>
+            <div class="detail">${capLabel(step.agent.category)} · ${step.track ? step.track : 'vetted, verified before it counts'}</div>
           </div>
         </div>`;
     });

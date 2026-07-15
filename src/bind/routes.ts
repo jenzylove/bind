@@ -6,6 +6,7 @@ import { executePlan, InsufficientBalanceError } from "./executor.js";
 import { savePlan, loadPlan, saveExecution, loadExecution } from "./store.js";
 import { findMatchingAgents } from "./marketplace.js";
 import { verifyPayment } from "./pay-verify.js";
+import { allReputation } from "./reputation.js";
 import { config } from "../config.js";
 
 // When set, /bind/execute runs without an on-chain payment (used for internal testing and
@@ -133,6 +134,26 @@ bindRouter.get("/status/:executionId", (req, res) => {
     return;
   }
   res.json(execution);
+});
+
+// Agent reputation earned on real missions. This is Bind's own data: which marketplace
+// agents actually take payment and deliver verified work. Public so it can be audited.
+bindRouter.get("/agents", (_req, res) => {
+  const reps = allReputation();
+  res.json({
+    note: "Track record earned on real Bind missions. passRate = verified outputs / times hired.",
+    agents: reps.length,
+    missions: reps.reduce((n, r) => n + r.missions, 0),
+    leaderboard: reps.map((r) => ({
+      agentId: r.agentId,
+      name: r.name,
+      missions: r.missions,
+      verified: r.passed,
+      failed: r.failed,
+      passRate: Math.round(r.passRate * 100) / 100,
+      paidUsdt: Math.round(r.paidUsdt * 1e6) / 1e6,
+    })),
+  });
 });
 
 // Search the marketplace live

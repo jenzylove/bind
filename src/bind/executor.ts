@@ -264,7 +264,7 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
 
   for (const step of plan.steps) {
     const result: ExecutionResult = {
-      step: step.step, agentName: step.agent.name, status: "running",
+      step: step.step, agentName: step.agent.name, agentId: step.agent.agentId, status: "running",
       startedAt: new Date().toISOString(),
     };
 
@@ -279,6 +279,7 @@ export async function executePlan(plan: BindPlan): Promise<BindExecution> {
         result.output = call.output;
         if (call.paid) {
           result.paymentTxHash = call.txHash ?? "settled";
+          result.feeUsdt = step.agent.feeAmount;
           totalPaid += step.agent.feeAmount;
         } else {
           result.paymentTxHash = "no_payment_needed";

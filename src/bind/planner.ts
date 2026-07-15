@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { BindPlan, BindStep, PlanRequest } from "./types.js";
 import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceService } from "./marketplace.js";
 import { selectAgents, type SelectCandidate } from "./select.js";
+import { repSummary } from "./reputation.js";
 
 // Guardrails so an auto-plan is never surprising or nonsensical.
 const PER_STEP_FEE_CEILING = 0.60;   // ceiling for tested-payable agents
@@ -135,6 +136,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       service: svc.serviceName,
       cheapestFee: svc.feeAmount,
       payable: PAYABLE_AGENT_IDS.has(agent.agentId),
+      track: repSummary(agent.agentId),
     };
   });
   // Cap the crew at 3. The router used to pad to 4, which hired near-duplicate agents
@@ -200,6 +202,8 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       },
       agentServiceDescription,
       boundParams: PAYABLE_ENDPOINTS.get(agent.agentId)?.params ?? undefined,
+      // Shown to the buyer so the crew is justified by evidence, not vibes.
+      track: repSummary(agent.agentId) ?? undefined,
       inputTemplate: { q: req.goal },
       verificationType: "data",
       verificationCriteria: "Agent returned structured output",

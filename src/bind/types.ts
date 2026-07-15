@@ -21,6 +21,8 @@ export interface BindStep {
   // $TOKEN / $GOAL placeholders the executor substitutes at call time. When present, the
   // executor uses this verbatim instead of guessing params.
   boundParams?: Record<string, string>;
+  /** Track record on past Bind missions, e.g. "94% verified over 17 missions". */
+  track?: string;
   verificationType: "data" | "content" | "code";
   verificationCriteria?: string;
   fallbackAgent?: BindAgent;
@@ -43,6 +45,10 @@ export interface BindPlan {
 export interface ExecutionResult {
   step: number;
   agentName: string;
+  /** Kept so reputation can be aggregated per agent across missions, not by display name. */
+  agentId?: string;
+  /** What this agent was actually paid, when a real settlement happened. */
+  feeUsdt?: number;
   status: "pending" | "running" | "passed" | "failed" | "skipped" | "errored";
   input?: unknown;
   output?: unknown;

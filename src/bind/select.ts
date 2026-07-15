@@ -18,6 +18,8 @@ export interface SelectCandidate {
   service: string;
   cheapestFee: number;
   payable: boolean;
+  /** Track record earned on real missions, e.g. "94% verified over 17 missions". */
+  track?: string | null;
 }
 
 export interface Pick {
@@ -35,7 +37,7 @@ export async function selectAgents(goal: string, candidates: SelectCandidate[], 
   // profile blurb alone mis-hires badly (a rug-scan goal hired a price feed because the
   // vendor reads as a generic markets company).
   const catalog = slice
-    .map((c) => `${c.agentId} | ${c.payable ? "PAYABLE" : "untested"} | $${c.cheapestFee} | ${c.category} | SERVICE: "${c.service}" (by ${c.name}) :: ${c.description.replace(/\s+/g, " ").slice(0, 120)}`)
+    .map((c) => `${c.agentId} | ${c.payable ? "PAYABLE" : "untested"}${c.track ? ` | TRACK: ${c.track}` : ""} | $${c.cheapestFee} | ${c.category} | SERVICE: "${c.service}" (by ${c.name}) :: ${c.description.replace(/\s+/g, " ").slice(0, 120)}`)
     .join("\n");
 
   try {
@@ -45,6 +47,7 @@ export async function selectAgents(goal: string, candidates: SelectCandidate[], 
       max_tokens: 700,
       system:
         "You are Bind's routing brain. Given a user's goal and a catalog of on-chain agents, pick the SMALL set of agents that together best answer the goal. " +
+        "TRACK shows an agent's real record on past Bind missions (verified pass rate). Prefer a proven track record over an unproven agent when both fit. " +
         "Rules: (1) PAYABILITY IS PARAMOUNT. Agents marked PAYABLE reliably settle and return data; untested ones almost always reject payment and produce nothing. Fill your picks with PAYABLE agents first. Include AT MOST ONE untested agent, and ONLY if it covers an essential angle that NO payable agent can — otherwise pick all-payable. " +
         "(2) NEVER pad to the limit. Hire the FEWEST agents that fully cover the goal: one agent is correct for a narrow question, two is typical, three only when the goal genuinely has three distinct angles. The buyer pays for every agent you hire and each one can fail, so an unnecessary hire is a real cost, not a bonus. " +
         "(3) Never hire two agents that cover the SAME angle (e.g. two market-data feeds). Each hire must add something the others cannot. " +

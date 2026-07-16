@@ -46,9 +46,12 @@ export function agentReputation(): Map<string, AgentRep> {
   const reps = new Map<string, AgentRep>();
   for (const exec of readExecutions()) {
     for (const step of exec.stepResults ?? []) {
-      const id = step.agentId || step.agentName;   // older records predate agentId
-      if (!id) continue;
-      const r = reps.get(id) ?? { agentId: id, name: step.agentName, missions: 0, passed: 0, failed: 0, paidUsdt: 0, passRate: 0 };
+      // Key by NAME so an agent's whole history aggregates: older records predate agentId
+      // and are keyed by name, newer ones carry both. Keying by id would split the two.
+      const key = step.agentName || step.agentId;
+      if (!key) continue;
+      const r = reps.get(key) ?? { agentId: step.agentId || key, name: step.agentName || key, missions: 0, passed: 0, failed: 0, paidUsdt: 0, passRate: 0 };
+      if (step.agentId) r.agentId = step.agentId;
       r.missions += 1;
       if (step.status === "passed") r.passed += 1;
       else if (step.status === "failed" || step.status === "errored") r.failed += 1;
@@ -63,12 +66,11 @@ export function agentReputation(): Map<string, AgentRep> {
   return reps;
 }
 
-/** Track record for one agent. Older records predate agentId, so we resolve by name too. */
+/** Track record for one agent. Reputation is keyed by name (merges old + new records). */
 export function repFor(agentId: string, name?: string): AgentRep | null {
   const reps = agentReputation();
-  const byId = reps.get(agentId);
-  if (byId) return byId;
-  if (name) for (const r of reps.values()) if (r.name === name) return r;
+  if (name && reps.has(name)) return reps.get(name)!;
+  for (const r of reps.values()) if (r.agentId === agentId) return r;
   return null;
 }
 

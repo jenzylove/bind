@@ -76,7 +76,10 @@ const planHandler = async (req: Parameters<typeof bindRouter.post>[1] extends an
 
 // /bind/plan is the REGISTERED x402 ASP endpoint: an unpaid call gets a 402 challenge, a
 // paid call gets the plan. /bind/quote is the same logic, free, for the human website.
-bindRouter.post("/plan", requireX402(config.prices.bind_plan, "Bind: plan a multi-agent workflow for a goal"), planHandler);
+const PLAN_DESC = "Bind: plan a multi-agent workflow for a goal";
+bindRouter.post("/plan", requireX402(config.prices.bind_plan, PLAN_DESC), planHandler);
+// Validators (x402-validate) probe with GET and expect the 402 challenge there too.
+bindRouter.get("/plan", requireX402(config.prices.bind_plan, PLAN_DESC), (_req, res) => res.status(405).json({ error: "method_not_allowed", message: "POST a goal to run this service." }));
 bindRouter.post("/quote", planHandler);
 
 const executeHandler = async (req: any, res: any) => {
@@ -137,7 +140,9 @@ const executeHandler = async (req: any, res: any) => {
 
 // /bind/execute is the REGISTERED x402 ASP endpoint (unpaid → 402, paid → runs the
 // mission). /bind/mission is the human website's path: it verifies a wallet payment tx.
-bindRouter.post("/execute", requireX402(config.prices.bind_execute, "Bind: execute a planned multi-agent mission"), executeHandler);
+const EXEC_DESC = "Bind: execute a planned multi-agent mission";
+bindRouter.post("/execute", requireX402(config.prices.bind_execute, EXEC_DESC), executeHandler);
+bindRouter.get("/execute", requireX402(config.prices.bind_execute, EXEC_DESC), (_req, res) => res.status(405).json({ error: "method_not_allowed", message: "POST a planId to run this service." }));
 bindRouter.post("/mission", executeHandler);
 
 bindRouter.get("/status/:executionId", (req, res) => {

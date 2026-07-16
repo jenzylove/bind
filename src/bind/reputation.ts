@@ -57,7 +57,7 @@ export function agentReputation(): Map<string, AgentRep> {
       else if (step.status === "failed" || step.status === "errored") r.failed += 1;
       // Only count money that actually moved (a real settlement tx, not "no_payment_needed").
       if (step.paymentTxHash?.startsWith("0x")) r.paidUsdt += step.feeUsdt ?? 0;
-      reps.set(id, r);
+      reps.set(key, r);
     }
   }
   for (const r of reps.values()) r.passRate = r.missions ? r.passed / r.missions : 0;

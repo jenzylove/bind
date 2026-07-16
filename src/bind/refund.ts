@@ -24,12 +24,13 @@ function transferCalldata(to: string, amountBaseUnits: bigint): string {
 }
 
 /**
+ * Refund the quoted cost of agents that did not deliver verified work.
  * @param quotedAgentCost what the buyer was charged for agents
- * @param actuallyPaid    what Bind really paid out to agents
+ * @param deliveredCost   cost of only the agents that PASSED verification (what the buyer keeps paying for)
  * @param payer           the buyer's address (from the payment's Transfer log)
  */
-export async function refundUnspent(quotedAgentCost: number, actuallyPaid: number, payer?: string): Promise<RefundResult> {
-  const unspent = Math.round((quotedAgentCost - actuallyPaid) * 1e6) / 1e6;
+export async function refundUnspent(quotedAgentCost: number, deliveredCost: number, payer?: string): Promise<RefundResult> {
+  const unspent = Math.round((quotedAgentCost - deliveredCost) * 1e6) / 1e6;
   if (!payer || !/^0x[0-9a-fA-F]{40}$/.test(payer)) return { refunded: 0, reason: "no payer address on record" };
   if (unspent < MIN_REFUND_USDT) return { refunded: 0, reason: unspent <= 0 ? "full budget was spent" : "below refund threshold" };
   if (!config.usdtAsset) return { refunded: 0, reason: "server misconfigured: no token address" };

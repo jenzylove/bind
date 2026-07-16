@@ -338,12 +338,17 @@ export async function executePlan(plan: BindPlan, payer?: string): Promise<BindE
     createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
   };
 
-  // Return whatever agent budget the mission never spent. The buyer prepaid the quote; any
-  // agent that flaked was never paid, and keeping that money would be charging for work
-  // nobody did. Bind's platform fee is earned and stays. Best-effort: a refund failure
-  // never fails the mission.
+  // The buyer only pays for VERIFIED work. Refund the quoted cost of every agent that did
+  // not deliver a passing output — whether it never took payment, or it took payment and
+  // then failed inspection. In the second case Bind absorbs the loss to that agent; that is
+  // the cost of being the trusted layer, and it makes "you never pay for work that fails
+  // verification" actually true. Bind's platform fee is earned and stays. Best-effort: a
+  // refund failure never fails the mission.
   const quotedAgentCost = plan.agentCost ?? plan.steps.reduce((s, x) => s + x.agent.feeAmount, 0);
-  const refund = await refundUnspent(quotedAgentCost, totalPaid, payer);
+  const deliveredCost = stepResults
+    .filter((r) => r.status === "passed")
+    .reduce((s, r) => s + (r.feeUsdt ?? 0), 0);
+  const refund = await refundUnspent(quotedAgentCost, deliveredCost, payer);
   if (refund.refunded > 0) {
     execution.refundedUsdt = refund.refunded;
     execution.refundTxHash = refund.txHash;

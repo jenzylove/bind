@@ -27,9 +27,12 @@ export function x402Challenge(amountBaseUnits: string, resourceUrl: string, desc
         network: "eip155:196",
         amount: String(amountBaseUnits),
         asset: USDT,
+        // USD₮0 is 6-decimal. The task system can't resolve decimals for this token from
+        // its registry, so we declare them here to remove the validator's tokenResolveError.
+        decimals: 6,
         payTo: PAYTO,
         maxTimeoutSeconds: 300,
-        extra: { name: "USD₮0", version: "1" },
+        extra: { name: "USD₮0", version: "1", decimals: 6 },
       },
     ],
   };

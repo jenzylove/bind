@@ -632,7 +632,7 @@ async function createPlan() {
   await sleep(300);
   addLog('Searching OKX ASP marketplace...', 'search');
   try {
-    const { res, data } = await fetchJson('/bind/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal }) }, 25000);
+    const { res, data } = await fetchJson('/bind/quote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal }) }, 25000);
     if (!res.ok) { addLog(`Error: ${data.message}`, 'error'); showError(data.message || 'Failed to create plan'); return; }
     if (!data.plan.steps.length) {
       // Honest decline: Bind has no specialist for this goal. Say so plainly, no charge.
@@ -720,7 +720,7 @@ async function executePlan() {
 
   try {
     for (const step of currentPlan.steps) { addLog(`Calling ${step.agent.name}...`, 'info'); }
-    const { res, data } = await fetchJson('/bind/execute', {
+    const { res, data } = await fetchJson('/bind/mission', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ planId: currentPlan.planId, paymentTxHash }),
     }, 45000);

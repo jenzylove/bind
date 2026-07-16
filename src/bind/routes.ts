@@ -7,6 +7,7 @@ import { savePlan, loadPlan, saveExecution, loadExecution } from "./store.js";
 import { findMatchingAgents } from "./marketplace.js";
 import { verifyPayment } from "./pay-verify.js";
 import { allReputation } from "./reputation.js";
+import { requireX402 } from "./x402-gate.js";
 import { config } from "../config.js";
 
 // When set, /bind/execute runs without an on-chain payment (used for internal testing and
@@ -43,7 +44,7 @@ bindRouter.get("/config", (_req, res) => {
   });
 });
 
-bindRouter.post("/plan", async (req, res) => {
+const planHandler = async (req: Parameters<typeof bindRouter.post>[1] extends any ? any : never, res: any) => {
   try {
     const body = req.body as PlanRequest | undefined;
     if (!body?.goal || typeof body.goal !== "string" || body.goal.trim().length === 0) {
@@ -71,9 +72,14 @@ bindRouter.post("/plan", async (req, res) => {
   } catch (e) {
     res.status(422).json({ error: "plan_failed", message: (e as Error).message });
   }
-});
+};
 
-bindRouter.post("/execute", async (req, res) => {
+// /bind/plan is the REGISTERED x402 ASP endpoint: an unpaid call gets a 402 challenge, a
+// paid call gets the plan. /bind/quote is the same logic, free, for the human website.
+bindRouter.post("/plan", requireX402(config.prices.bind_plan, "Bind: plan a multi-agent workflow for a goal"), planHandler);
+bindRouter.post("/quote", planHandler);
+
+const executeHandler = async (req: any, res: any) => {
   try {
     const body = req.body as { planId?: string } | undefined;
     if (!body?.planId) {
@@ -127,7 +133,12 @@ bindRouter.post("/execute", async (req, res) => {
     }
     res.status(422).json({ error: "execution_failed", message: (e as Error).message });
   }
-});
+};
+
+// /bind/execute is the REGISTERED x402 ASP endpoint (unpaid → 402, paid → runs the
+// mission). /bind/mission is the human website's path: it verifies a wallet payment tx.
+bindRouter.post("/execute", requireX402(config.prices.bind_execute, "Bind: execute a planned multi-agent mission"), executeHandler);
+bindRouter.post("/mission", executeHandler);
 
 bindRouter.get("/status/:executionId", (req, res) => {
   const execution = executions.get(req.params.executionId) ?? loadExecution(req.params.executionId);

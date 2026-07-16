@@ -61,19 +61,17 @@ app.get("/", (req, res) => {
     tools: [
       {
         name: "bind_plan",
-        price: "0",
-        listPrice: config.prices.bind_plan,
+        price: config.prices.bind_plan,
         unit: "USDT base units",
-        summary: "Describe a goal and get a multi-agent plan with a flat price. Free to try during the hackathon launch.",
-        status: "free-preview",
+        summary: "Describe a goal and get a multi-agent plan with a flat price. Humans can get the same plan free at the web app.",
+        status: "live",
       },
       {
         name: "bind_execute",
-        price: "0",
-        listPrice: config.prices.bind_execute,
+        price: config.prices.bind_execute,
         unit: "USDT base units",
-        summary: "Execute a plan: pays each agent on X Layer, verifies each output, returns one deliverable + on-chain receipt. You only pay the underlying agents; Bind's orchestration fee is waived during launch.",
-        status: "free-preview",
+        summary: "Execute a plan: pays each agent on X Layer, verifies each output, returns one deliverable + on-chain receipt. Unspent agent budget is refunded to the buyer.",
+        status: "live",
       },
     ],
     tryItYourself: `${config.publicBaseUrl}/bind/app`,
@@ -86,9 +84,11 @@ app.get("/", (req, res) => {
 const hits = new Map<string, { count: number; resetAt: number }>();
 const RL_WINDOW_MS = 10 * 60 * 1000;
 const RL_MAX = 40;
-app.use(["/bind/plan", "/bind/execute"], (req, res, next) => {
+app.use(["/bind/plan", "/bind/execute", "/bind/quote", "/bind/mission"], (req, res, next) => {
   const ip = (req.headers["x-forwarded-for"] as string || req.ip || "unknown").split(",")[0].trim();
   const now = Date.now();
+  // Keep the map bounded: drop expired windows once it grows past a sane size.
+  if (hits.size > 10_000) for (const [k, v] of hits) if (now > v.resetAt) hits.delete(k);
   const rec = hits.get(ip);
   if (!rec || now > rec.resetAt) {
     hits.set(ip, { count: 1, resetAt: now + RL_WINDOW_MS });

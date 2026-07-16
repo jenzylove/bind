@@ -59,6 +59,24 @@ export function paymentAlreadyUsed(hash: string): boolean {
   return loadUsed().has((hash || "").toLowerCase());
 }
 
+// Claimed by an in-flight execution but not yet burned. Two concurrent requests with the
+// same tx hash must not both pass verification (the used-file write is not atomic), and a
+// payment must only be burned once its mission actually ran — if execution throws before
+// doing any work, the buyer keeps the right to retry with the same tx.
+const inFlight = new Set<string>();
+
+/** Burn the payment: its mission ran. Call after executePlan returns. */
+export function commitPayment(hash: string): void {
+  const h = (hash || "").toLowerCase();
+  markUsed(h);
+  inFlight.delete(h);
+}
+
+/** Release a claimed payment so the buyer can retry: its mission never ran. */
+export function releasePayment(hash: string): void {
+  inFlight.delete((hash || "").toLowerCase());
+}
+
 // keccak256("Transfer(address,address,uint256)")
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 function topicToAddress(t: string): string { return "0x" + t.slice(-40); }
@@ -85,6 +103,7 @@ export async function verifyPayment(txHash: string, minUsdt: number): Promise<Pa
   if (!BIND_WALLET) return { ok: false, reason: "server misconfigured: no pay-to address" };
   const h = txHash.toLowerCase();
   if (loadUsed().has(h)) return { ok: false, reason: "this payment was already used for another mission" };
+  if (inFlight.has(h)) return { ok: false, reason: "this payment is already funding a mission that is running right now" };
 
   const tx = await rpc("eth_getTransactionByHash", [h]);
   if (!tx) return { ok: false, reason: "transaction not found on X Layer" };
@@ -104,7 +123,9 @@ export async function verifyPayment(txHash: string, minUsdt: number): Promise<Pa
   if (!receipt) return { ok: false, reason: "payment not yet confirmed — wait a few seconds and retry" };
   if (receipt.status !== "0x1") return { ok: false, reason: "payment transaction failed on-chain" };
 
-  markUsed(h);
+  // Claim (don't burn) the payment. The route commits it only after the mission runs,
+  // so a pre-execution failure leaves the buyer free to retry with the same tx.
+  inFlight.add(h);
   // tx.from is the account that submitted; for a relayed/sponsored payment that can be a
   // relayer, so prefer the ERC-20 Transfer log's `from` topic (the real payer).
   const payer = payerFromReceipt(receipt) ?? (tx.from as string | undefined);

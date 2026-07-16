@@ -5,7 +5,7 @@ import { createPlan } from "./planner.js";
 import { executePlan, InsufficientBalanceError } from "./executor.js";
 import { savePlan, loadPlan, saveExecution, loadExecution } from "./store.js";
 import { findMatchingAgents } from "./marketplace.js";
-import { verifyPayment } from "./pay-verify.js";
+import { verifyPayment, commitPayment, releasePayment } from "./pay-verify.js";
 import { allReputation } from "./reputation.js";
 import { requireX402 } from "./x402-gate.js";
 import { config } from "../config.js";
@@ -83,6 +83,9 @@ bindRouter.get("/plan", requireX402(config.prices.bind_plan, PLAN_DESC), (_req, 
 bindRouter.post("/quote", planHandler);
 
 const executeHandler = async (req: any, res: any) => {
+  // The verified payment tx, claimed but not burned. Burned only after the mission runs;
+  // released if execution never starts, so the buyer can retry with the same payment.
+  let claimedTx: string | undefined;
   try {
     const body = req.body as { planId?: string } | undefined;
     if (!body?.planId) {
@@ -116,14 +119,20 @@ const executeHandler = async (req: any, res: any) => {
         return;
       }
       payer = verdict.payer; // so unspent agent budget can go back to whoever paid
+      claimedTx = paymentTxHash;
     }
 
     const execution = await executePlan(plan, payer);
+    // The mission ran — only now is the payment spent (refund logic inside executePlan
+    // already handled any under-delivery fairly).
+    if (claimedTx) commitPayment(claimedTx);
     executions.set(execution.executionId, execution);
     saveExecution(execution);
 
     res.json(execution);
   } catch (e) {
+    // Execution never happened — give the buyer their payment back to retry with.
+    if (claimedTx) releasePayment(claimedTx);
     // The wallet can't cover the plan — decline BEFORE any payment, with a clear reason.
     if (e instanceof InsufficientBalanceError) {
       res.status(402).json({

@@ -634,7 +634,12 @@ async function createPlan() {
   try {
     const { res, data } = await fetchJson('/bind/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal }) }, 25000);
     if (!res.ok) { addLog(`Error: ${data.message}`, 'error'); showError(data.message || 'Failed to create plan'); return; }
-    if (!data.plan.steps.length) { addLog('No compatible agents found.', 'error'); showError(data.plan.note || 'No compatible agents found for this goal.'); return; }
+    if (!data.plan.steps.length) {
+      // Honest decline: Bind has no specialist for this goal. Say so plainly, no charge.
+      addLog('No specialist for this goal.', 'info');
+      showError((data.plan.note || 'Bind does not have an agent that can deliver this yet.') + ' You have not been charged.');
+      return;
+    }
     addLog(`${data.summary.agents} compatible agents found.`, 'search');
     await sleep(250);
     addLog('Optimizing execution graph...', 'info');

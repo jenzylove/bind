@@ -144,9 +144,26 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   // Cap the crew at 3. The router used to pad to 4, which hired near-duplicate agents
   // (three "market data" specialists on one brief). Every extra hire is another charge to
   // the buyer and another chance to fail, so a smaller, distinct crew is strictly better.
-  const picks = await selectAgents(req.goal, candidates, 3);
-  if (picks) {
-    for (const p of picks) {
+  const selection = await selectAgents(req.goal, candidates, 3);
+
+  // The router genuinely has no agent for this goal. Decline honestly instead of hiring
+  // keyword-matched agents that would return irrelevant data and charge the buyer. This is
+  // the fix for "web-app security audit" pulling three crypto agents.
+  if (selection && selection.picks.length === 0 && selection.declineReason) {
+    return {
+      planId: randomUUID(),
+      goal: req.goal,
+      steps: [],
+      totalPriceUsdt: 0,
+      priceBreakdown: [],
+      estimatedTime: "N/A",
+      createdAt: new Date().toISOString(),
+      note: selection.declineReason,
+    };
+  }
+
+  if (selection && selection.picks.length > 0) {
+    for (const p of selection.picks) {
       const agent = byId.get(p.agentId);
       if (!agent) continue;
       const fee = chosenService(agent).feeAmount;

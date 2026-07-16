@@ -27,7 +27,13 @@ export interface Pick {
   reason: string;
 }
 
-export async function selectAgents(goal: string, candidates: SelectCandidate[], max = 4): Promise<Pick[] | null> {
+export interface SelectResult {
+  picks: Pick[];
+  /** When the router genuinely cannot cover the goal, an honest explanation to show the user. */
+  declineReason?: string;
+}
+
+export async function selectAgents(goal: string, candidates: SelectCandidate[], max = 4): Promise<SelectResult | null> {
   if (!ANTHROPIC_KEY || candidates.length === 0) return null;
 
   // Keep the catalog compact: payable first, then a bounded slice, short descriptions.
@@ -51,8 +57,10 @@ export async function selectAgents(goal: string, candidates: SelectCandidate[], 
         "Rules: (1) PAYABILITY IS PARAMOUNT. Agents marked PAYABLE reliably settle and return data; untested ones almost always reject payment and produce nothing. Fill your picks with PAYABLE agents first. Include AT MOST ONE untested agent, and ONLY if it covers an essential angle that NO payable agent can — otherwise pick all-payable. " +
         "(2) NEVER pad to the limit. Hire the FEWEST agents that fully cover the goal: one agent is correct for a narrow question, two is typical, three only when the goal genuinely has three distinct angles. The buyer pays for every agent you hire and each one can fail, so an unnecessary hire is a real cost, not a bonus. " +
         "(3) Never hire two agents that cover the SAME angle (e.g. two market-data feeds). Each hire must add something the others cannot. " +
-        "(4) Only pick agents genuinely relevant to THIS goal. (5) Never pick an agent whose job is to take an action (launch/mint/swap/buy/sell) for an analytical goal. " +
-        `Return ONLY JSON: {\"picks\":[{\"agentId\":\"<id>\",\"reason\":\"<why, <=12 words>\"}]} with AT MOST ${max} picks (fewer is better), best first.`,
+        "(4) CAPABILITY, NOT KEYWORDS. An agent only counts if its SERVICE actually produces what the goal asks for. A shared word is not a match: a 'Payload Security Scan' or a crypto price feed does NOT perform a website or web-app security audit; a market-data agent does NOT audit code. If the goal needs a capability none of these agents genuinely have (e.g. a web-app pentest, image generation, a legal review), it is far better to DECLINE than to hire agents that will return irrelevant data and charge the user for it. " +
+        "(5) Never pick an agent whose job is to take an action (launch/mint/swap/buy/sell) for an analytical goal. " +
+        `Return ONLY JSON. To hire: {\"picks\":[{\"agentId\":\"<id>\",\"reason\":\"<why, <=12 words>\"}]} with AT MOST ${max} picks (fewer is better), best first. ` +
+        `To decline because no agent genuinely fits: {\"picks\":[],\"decline\":\"<one honest sentence: what Bind cannot do here, and what kind of goal it can handle>\"}.`,
       messages: [
         { role: "user", content: [{ type: "text", text: `Goal: ${goal}\n\nCatalog (id | payability | fee | category | name: what it does):\n${catalog}\n\nPick the best (<=${max}) agents.` }] },
       ],
@@ -67,7 +75,13 @@ export async function selectAgents(goal: string, candidates: SelectCandidate[], 
       .filter((p: any) => p && valid.has(String(p.agentId)))
       .map((p: any) => ({ agentId: String(p.agentId), reason: String(p.reason || "").slice(0, 80) }))
       .slice(0, max);
-    return picks.length > 0 ? picks : null;
+    if (picks.length > 0) return { picks };
+    // The router looked and found nothing that genuinely fits — surface that honestly
+    // rather than letting the heuristic fall back to keyword-matched crypto agents.
+    if (typeof parsed.decline === "string" && parsed.decline.trim()) {
+      return { picks: [], declineReason: parsed.decline.trim().slice(0, 220) };
+    }
+    return null;
   } catch {
     return null;
   }

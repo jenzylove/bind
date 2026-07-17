@@ -15,6 +15,8 @@ export const config = {
   prices: {
     bind_plan: process.env.PRICE_BIND_PLAN ?? "50000",       // 0.05 USDT
     bind_execute: process.env.PRICE_BIND_EXECUTE ?? "500000", // 0.50 USDT
+    // The reputation ledger, sold as data: full hire-by-hire evidence with tx hashes.
+    bind_reputation: process.env.PRICE_BIND_REPUTATION ?? "10000", // 0.01 USDT
   },
 } as const;
 

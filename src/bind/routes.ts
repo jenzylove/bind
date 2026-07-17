@@ -1,12 +1,13 @@
 // Bind — Express routes: /bind/plan, /bind/execute, /bind/status, /bind/search
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import type { PlanRequest } from "./types.js";
 import { createPlan } from "./planner.js";
 import { executePlan, InsufficientBalanceError } from "./executor.js";
 import { savePlan, loadPlan, saveExecution, loadExecution } from "./store.js";
 import { findMatchingAgents } from "./marketplace.js";
 import { verifyPayment, commitPayment, releasePayment } from "./pay-verify.js";
-import { allReputation } from "./reputation.js";
+import { allReputation, ledgerDetail } from "./reputation.js";
 import { requireX402 } from "./x402-gate.js";
 import { config } from "../config.js";
 
@@ -122,6 +123,36 @@ const executeHandler = async (req: any, res: any) => {
       claimedTx = paymentTxHash;
     }
 
+    // Async mode (the website uses this): answer with a running stub immediately and let
+    // the crew work in the background — long missions no longer die at proxy timeouts.
+    // The registered agent endpoint stays synchronous: agent buyers expect the
+    // deliverable in the response they paid for.
+    if ((body as { async?: boolean }).async === true) {
+      const executionId = randomUUID();
+      const stub: Awaited<ReturnType<typeof executePlan>> = {
+        executionId, planId: plan.planId, goal: plan.goal, status: "running",
+        stepResults: [], totalPaid: 0, totalSteps: plan.steps.length, completedSteps: 0,
+        createdAt: new Date().toISOString(),
+      };
+      executions.set(executionId, stub);
+      saveExecution(stub);
+      const spentTx = claimedTx;
+      void executePlan(plan, payer, executionId)
+        .then((execution) => {
+          if (spentTx) commitPayment(spentTx);
+          executions.set(executionId, execution);
+          saveExecution(execution);
+        })
+        .catch((e) => {
+          if (spentTx) releasePayment(spentTx);
+          const failed = { ...stub, status: "failed" as const, finalOutput: undefined, completedAt: new Date().toISOString(), error: (e as Error).message } as any;
+          executions.set(executionId, failed);
+          saveExecution(failed);
+        });
+      res.status(202).json({ executionId, status: "running", statusUrl: `/bind/status/${executionId}` });
+      return;
+    }
+
     const execution = await executePlan(plan, payer);
     // The mission ran — only now is the payment spent (refund logic inside executePlan
     // already handled any under-delivery fairly).
@@ -182,6 +213,20 @@ bindRouter.get("/agents", (_req, res) => {
     })),
   });
 });
+
+// The reputation ledger sold as data (trust as a service): the free /agents endpoint is
+// the summary; this returns the full hire-by-hire evidence — per-agent outcomes with
+// settlement tx hashes — behind an x402 paywall. Only Bind has this data; it was earned
+// by paying real money on real missions.
+const REP_DESC = "Bind: full agent reputation ledger with hire-by-hire evidence";
+const repHandler = (_req: any, res: any) => {
+  res.json({
+    note: "Evidence earned on real Bind missions: every hire, what it was paid, whether the output verified.",
+    ...ledgerDetail(),
+  });
+};
+bindRouter.get("/reputation", requireX402(config.prices.bind_reputation, REP_DESC), repHandler);
+bindRouter.post("/reputation", requireX402(config.prices.bind_reputation, REP_DESC), repHandler);
 
 // Search the marketplace live
 bindRouter.get("/search", async (req, res) => {

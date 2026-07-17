@@ -94,3 +94,31 @@ export function isProvenBad(agentId: string, name?: string): boolean {
 export function allReputation(): AgentRep[] {
   return [...agentReputation().values()].sort((a, b) => b.missions - a.missions);
 }
+
+/**
+ * The paid product: the full evidence behind the leaderboard. Per-agent hire-by-hire
+ * outcomes with settlement tx hashes, newest first. This is data only Bind has — earned
+ * by paying real money — so unlike the free summary it is sold via x402.
+ */
+export function ledgerDetail(limit = 200): {
+  leaderboard: AgentRep[];
+  evidence: Array<{ at: string; goal: string; agentId?: string; agent: string; status: string; feeUsdt?: number; settlementTx?: string; verification?: string }>;
+} {
+  const evidence: ReturnType<typeof ledgerDetail>["evidence"] = [];
+  for (const exec of readExecutions()) {
+    for (const step of exec.stepResults ?? []) {
+      evidence.push({
+        at: exec.createdAt,
+        goal: exec.goal,
+        agentId: step.agentId,
+        agent: step.agentName,
+        status: step.status,
+        feeUsdt: step.feeUsdt,
+        settlementTx: step.paymentTxHash?.startsWith("0x") ? step.paymentTxHash : undefined,
+        verification: step.verificationResult?.detail,
+      });
+    }
+  }
+  evidence.sort((a, b) => (a.at < b.at ? 1 : -1));
+  return { leaderboard: allReputation(), evidence: evidence.slice(0, limit) };
+}

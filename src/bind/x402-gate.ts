@@ -12,6 +12,7 @@
 // wallet-pay flow — so gating here never touches that path.
 import type { Request, Response, NextFunction } from "express";
 import { config } from "../config.js";
+import { settleIncomingPayment } from "./x402-settle.js";
 
 const USDT = config.usdtAsset;      // 0x779ded…736
 const PAYTO = config.payToAddress;  // Bind's agentic wallet
@@ -38,27 +39,46 @@ export function x402Challenge(amountBaseUnits: string, resourceUrl: string, desc
   };
 }
 
-function hasPayment(req: Request): boolean {
+function paymentHeader(req: Request): string | null {
   const h = req.headers;
-  return Boolean(
-    h["payment-signature"] ||
-    h["x-payment"] ||
-    String(h["authorization"] || "").toUpperCase().startsWith("X402"),
-  );
+  const auth = String(h["authorization"] || "");
+  if (h["payment-signature"]) return String(h["payment-signature"]);
+  if (h["x-payment"]) return String(h["x-payment"]);
+  if (auth.toUpperCase().startsWith("X402")) return auth;
+  return null;
+}
+
+function send402(req: Request, res: Response, amountBaseUnits: string, description: string, extraError?: string): void {
+  const url = `${config.publicBaseUrl}${req.originalUrl.split("?")[0]}`;
+  const challenge = x402Challenge(amountBaseUnits, url, description);
+  if (extraError) (challenge as any).error = extraError;
+  const b64 = Buffer.from(JSON.stringify(challenge)).toString("base64");
+  res.setHeader("PAYMENT-REQUIRED", b64);
+  res.setHeader("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE");
+  res.status(402).json(challenge);
 }
 
 /**
  * Gate a route behind an x402 payment. An unpaid request (bare OR with a body) gets a 402
- * challenge; a request carrying a payment header falls through to the real handler.
+ * challenge. A request carrying a payment credential gets it validated and SETTLED
+ * on-chain before the handler runs — presence of a header is no longer proof of payment.
+ * The settlement result is echoed in the standard payment-response header.
  */
 export function requireX402(amountBaseUnits: string, description: string) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    if (hasPayment(req)) { next(); return; }
-    const url = `${config.publicBaseUrl}${req.originalUrl.split("?")[0]}`;
-    const challenge = x402Challenge(amountBaseUnits, url, description);
-    const b64 = Buffer.from(JSON.stringify(challenge)).toString("base64");
-    res.setHeader("PAYMENT-REQUIRED", b64);
-    res.setHeader("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE");
-    res.status(402).json(challenge);
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const credential = paymentHeader(req);
+    if (!credential) { send402(req, res, amountBaseUnits, description); return; }
+
+    const verdict = await settleIncomingPayment(credential, amountBaseUnits);
+    if (!verdict.ok) {
+      send402(req, res, amountBaseUnits, description, `Payment rejected: ${verdict.reason}`);
+      return;
+    }
+    if (verdict.settled) {
+      const receipt = Buffer.from(JSON.stringify({ success: true, transaction: verdict.txHash })).toString("base64");
+      res.setHeader("PAYMENT-RESPONSE", receipt);
+      res.setHeader("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE");
+    }
+    next();
   };
 }

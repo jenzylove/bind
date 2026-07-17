@@ -9,6 +9,8 @@ import { bindRouter } from "./bind/routes.js";
 import { renderBadge } from "./badge.js";
 import { loadExecution } from "./bind/store.js";
 import { warmCatalog } from "./bind/marketplace.js";
+import { renderMissionPage } from "./bind/mission-page.js";
+import { scheduleAutoprobe } from "./bind/autoprobe.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "..", "public");
@@ -107,8 +109,24 @@ app.use("/bind", bindRouter);
 // Status badge for Bind executions — reflects the real execution outcome.
 app.get("/badge/:executionId.svg", (req, res) => {
   const exec = loadExecution(req.params.executionId);
-  const state = !exec ? "unknown" : exec.status === "completed" ? "pass" : "fail";
+  const state =
+    !exec ? "unknown"
+    : exec.status === "completed" ? "pass"
+    : exec.status === "partial" ? "partial"
+    : exec.status === "running" ? "running"
+    : "fail";
   res.type("image/svg+xml").set("Cache-Control", "no-cache").send(renderBadge(state));
+});
+
+// Public mission page: the goal, the crew, every payment and verification, the refund,
+// and the on-chain anchor — a shareable proof artifact for every mission.
+app.get("/m/:executionId", (req, res) => {
+  const exec = loadExecution(req.params.executionId);
+  if (!exec) {
+    res.status(404).type("html").send("<body style='background:#16120b;color:#e7ddc7;font-family:Georgia,serif;text-align:center;padding-top:80px'><h2>No mission with that id.</h2><a style='color:#c8a45a' href='/'>Back to Bind</a></body>");
+    return;
+  }
+  res.type("html").send(renderMissionPage(exec));
 });
 
 const server = app.listen(config.port, () => {
@@ -118,6 +136,8 @@ const server = app.listen(config.port, () => {
   warmCatalog()
     .then((n) => console.log(`[bind] marketplace catalog warmed: ${n} agents`))
     .catch((e) => console.warn(`[bind] catalog warm failed (non-fatal): ${(e as Error).message}`));
+  // Grow the crew while we sleep: budget-capped nightly payability probe.
+  scheduleAutoprobe();
 });
 
 process.on("SIGINT", () => server.close(() => process.exit(0)));

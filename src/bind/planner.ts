@@ -38,7 +38,16 @@ function loadPayable(): { ids: Set<string>; endpoints: Map<string, PayableEndpoi
     return { ids: new Set<string>(FALLBACK_PAYABLE), endpoints };
   }
 }
-const { ids: PAYABLE_AGENT_IDS, endpoints: PAYABLE_ENDPOINTS } = loadPayable();
+// Re-read the allowlist with a short TTL (instead of once at boot) so agents the nightly
+// auto-probe admits become hireable without a redeploy.
+let _payable = loadPayable();
+let _payableAt = Date.now();
+function payableNow() {
+  if (Date.now() - _payableAt > 10 * 60_000) { _payable = loadPayable(); _payableAt = Date.now(); }
+  return _payable;
+}
+const PAYABLE_AGENT_IDS = { has: (id: string) => payableNow().ids.has(id) };
+const PAYABLE_ENDPOINTS = { get: (id: string) => payableNow().endpoints.get(id) };
 
 // An analytical goal ("is this safe", "research X", "sentiment on Y") must never
 // select an agent whose job is to take an action (launch/mint/swap/deploy).

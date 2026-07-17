@@ -8,6 +8,8 @@ import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 
 const ex = promisify(execFile);
 const BIN = process.env.HOME + "/.local/bin/onchainos";
+const DATA_DIR = process.env.BIND_DATA_DIR ?? "data";
+const PAYABLE_FILE = DATA_DIR + "/payable-agents.json";
 const SPEND_CAP = 0.12;          // wallet is low pre-refund — hard stop once cumulative settled fees exceed this
 const FEE_CEILING = 0.02;        // don't probe services pricier than this
 let spent = 0;
@@ -16,7 +18,7 @@ let spent = 0;
 // known reject, and don't waste calls re-verifying a known-payable agent.
 let alreadyProbed = new Set();
 try {
-  const prev = JSON.parse(readFileSync("data/payable-agents.json", "utf8"));
+  const prev = JSON.parse(readFileSync(PAYABLE_FILE, "utf8"));
   alreadyProbed = new Set((prev.all || []).map((a) => a.id));
 } catch {}
 
@@ -110,7 +112,7 @@ for (const a of agents) {
 }
 // Merge with previously-probed results so the output file stays a full historical record.
 let previousAll = [];
-try { previousAll = JSON.parse(readFileSync("data/payable-agents.json", "utf8")).all || []; } catch {}
+try { previousAll = JSON.parse(readFileSync(PAYABLE_FILE, "utf8")).all || []; } catch {}
 const mergedAll = [...previousAll, ...results];
 
 // Data-usable = settled/free AND returned real data AND not an MCP/topup endpoint (those
@@ -126,16 +128,16 @@ function dataUsable(r) {
 // Carry forward previously-confirmed payable agents (they aren't re-probed this run) and
 // merge in anything new this run found data-usable.
 let previousPayable = [];
-try { previousPayable = JSON.parse(readFileSync("data/payable-agents.json", "utf8")).payable || []; } catch {}
+try { previousPayable = JSON.parse(readFileSync(PAYABLE_FILE, "utf8")).payable || []; } catch {}
 const newUsable = results.filter(dataUsable);
 const settledThisRun = results.filter(r=>["PAID-SETTLED","free-data","free-200"].includes(r.verdict));
 const usableById = new Map(previousPayable.map(p=>[p.id,p]));
 for (const p of newUsable) usableById.set(p.id, {id:p.id,name:p.name,fee:p.fee,verdict:p.verdict,endpoint:p.endpoint,service:p.service,desc:p.desc});
 const usable = [...usableById.values()];
 
-mkdirSync("data",{recursive:true});
-writeFileSync("data/payable-agents.json", JSON.stringify({
-  probedAt:"2026-07-13", totalProbedThisRun:results.length, totalProbedAllTime:mergedAll.length, totalSpentThisRun:spent,
+mkdirSync(DATA_DIR,{recursive:true});
+writeFileSync(PAYABLE_FILE, JSON.stringify({
+  probedAt:new Date().toISOString().slice(0,10), totalProbedThisRun:results.length, totalProbedAllTime:mergedAll.length, totalSpentThisRun:spent,
   payableIds: usable.map(p=>p.id),                       // routing set = data-usable, carried forward across runs
   settledButUnusable: settledThisRun.filter(r=>!dataUsable(r)).map(p=>({id:p.id,name:p.name,reason:(p.endpoint||"").endsWith("/mcp")?"mcp":(p.endpoint||"").includes("/topup")?"topup":"no-data"})),
   payable: usable,

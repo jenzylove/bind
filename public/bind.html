@@ -335,7 +335,7 @@
 
   <footer class="foot">
     <div>Bind · Powered by OKX AI · Built on X Layer</div>
-    <div class="foot-links"><a href="https://github.com/jenzylove/bind" target="_blank" rel="noopener">GitHub</a><a href="#" onclick="openApp();return false">Launch app</a></div>
+    <div class="foot-links"><a href="https://x.com/trybindX" target="_blank" rel="noopener">@trybindX</a><a href="https://github.com/jenzylove/bind" target="_blank" rel="noopener">GitHub</a><a href="#" onclick="openApp();return false">Launch app</a></div>
   </footer>
   </div><!-- /landing -->
 
@@ -720,12 +720,31 @@ async function executePlan() {
 
   try {
     for (const step of currentPlan.steps) { addLog(`Calling ${step.agent.name}...`, 'info'); }
+    // Async dispatch: the server answers immediately with an executionId and the crew
+    // works in the background — long missions no longer die at request timeouts.
     const { res, data } = await fetchJson('/bind/mission', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planId: currentPlan.planId, paymentTxHash }),
-    }, 45000);
-    if (!res.ok) { addLog(`Execution failed: ${data.message || ''}`, 'error'); showError(data.message || 'Execution failed'); btn.disabled = false; btn.innerHTML = 'Execute mission →'; return; }
-    renderExecution(data, rows);
+      body: JSON.stringify({ planId: currentPlan.planId, paymentTxHash, async: true }),
+    }, 30000);
+    if (!res.ok && res.status !== 202) { addLog(`Execution failed: ${data.message || ''}`, 'error'); showError(data.message || 'Execution failed'); btn.disabled = false; btn.innerHTML = 'Execute mission →'; return; }
+    let final = data;
+    if (res.status === 202 && data.executionId) {
+      addLog('Crew dispatched. Agents are working…', 'info');
+      const deadline = Date.now() + 5 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await sleep(3500);
+        try {
+          const { res: sres, data: sdata } = await fetchJson(`/bind/status/${data.executionId}`, {}, 15000);
+          if (sres.ok && sdata.status && sdata.status !== 'running') { final = sdata; break; }
+        } catch (e) { /* transient poll failure — keep waiting */ }
+      }
+      if (final.status === 'running') {
+        showError(`The mission is still running. Check back at /m/${data.executionId} — your payment is safe and refunds apply as usual.`);
+        btn.disabled = false; btn.innerHTML = 'Execute mission →';
+        return;
+      }
+    }
+    renderExecution(final, rows);
   } catch (e) { addLog('Execution error.', 'error'); showError(`Execution error: ${e.message}`); btn.disabled = false; btn.innerHTML = 'Execute mission →'; }
   finally { if (currentExecution) btn.textContent = '✓ Executed'; }
 }
@@ -767,6 +786,10 @@ async function renderExecution(data, rows) {
   document.getElementById('deliverableNote').textContent =
     `Synthesized from ${passed} verified output${passed===1?'':'s'}.` +
     (failed > 0 ? ` ${failed} agent${failed===1?'':'s'} failed inspection and ${failed===1?'was':'were'} excluded — only verified work is above.` : ' Every agent passed inspection.');
+  const missionLink = document.createElement('div');
+  missionLink.style.cssText = 'margin-top:8px';
+  missionLink.innerHTML = `<a href="/m/${data.executionId}" target="_blank" rel="noopener">View the public mission page →</a>`;
+  document.getElementById('deliverableNote').appendChild(missionLink);
 
   const receiptBlock = document.getElementById('receiptBlock');
   receiptBlock.style.display = 'block';

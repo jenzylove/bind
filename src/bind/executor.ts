@@ -248,7 +248,7 @@ function safeJson(text: string): unknown {
   try { return JSON.parse(text || "{}"); } catch { return text; }
 }
 
-export async function executePlan(plan: BindPlan, payer?: string): Promise<BindExecution> {
+export async function executePlan(plan: BindPlan, payer?: string, presetExecutionId?: string): Promise<BindExecution> {
   await walletLogin();
 
   // Guard: never start paying agents unless the wallet can cover the whole plan. This
@@ -258,7 +258,9 @@ export async function executePlan(plan: BindPlan, payer?: string): Promise<BindE
     throw new InsufficientBalanceError(balance, plan.totalPriceUsdt);
   }
 
-  const executionId = randomUUID();
+  // An async mission hands out its executionId before running, so /status can be
+  // polled while the crew works; the finished record must land under the same id.
+  const executionId = presetExecutionId ?? randomUUID();
   const stepResults: ExecutionResult[] = [];
   const passedOutputs: AgentOutput[] = [];
   let totalPaid = 0;

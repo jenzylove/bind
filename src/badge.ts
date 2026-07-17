@@ -1,17 +1,21 @@
 // Self-hosted embeddable status badge (no shields.io dependency — this is a
-// product surface, not a cosmetic nicety: an ASP linking a "Vouch-verified"
-// badge to its report is the distribution loop that makes the notary visible
+// product surface, not a cosmetic nicety: linking a "bind verified" badge to a
+// mission page is the distribution loop that makes the trust layer visible
 // across the marketplace). Pure string templating, no external calls.
-export type BadgeState = "pass" | "fail" | "unknown";
+export type BadgeState = "pass" | "partial" | "fail" | "running" | "unknown";
 
 const COLORS: Record<BadgeState, string> = {
   pass: "#2ea44f",
+  partial: "#b8860b",
   fail: "#d1242f",
+  running: "#4a5f78",
   unknown: "#6e7781",
 };
 const LABELS: Record<BadgeState, string> = {
   pass: "verified",
+  partial: "partially verified",
   fail: "failed",
+  running: "in progress",
   unknown: "not found",
 };
 
@@ -24,7 +28,7 @@ function textWidth(s: string): number {
 }
 
 export function renderBadge(state: BadgeState): string {
-  const left = "vouch";
+  const left = "bind";
   const right = LABELS[state];
   const leftWidth = textWidth(left);
   const rightWidth = textWidth(right);

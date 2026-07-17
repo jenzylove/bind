@@ -71,6 +71,8 @@ export interface BindExecution {
   executionId: string;
   planId: string;
   goal: string;
+  /** The buyer's wallet (from the payment's Transfer log) — keys per-wallet mission history. */
+  payer?: string;
   /** Agent budget quoted but never spent, returned to the buyer on-chain. */
   refundedUsdt?: number;
   refundTxHash?: string;

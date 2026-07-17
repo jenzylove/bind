@@ -333,7 +333,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
   const finalOutput = await synthesizeDeliverable(plan.goal, passedOutputs);
 
   const execution: BindExecution = {
-    executionId, planId: plan.planId, goal: plan.goal,
+    executionId, planId: plan.planId, goal: plan.goal, payer,
     status: completed === stepResults.length ? "completed" : completed > 0 ? "partial" : "failed",
     stepResults, finalOutput,
     totalPaid, totalSteps: stepResults.length, completedSteps: completed,

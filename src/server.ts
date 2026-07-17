@@ -6,11 +6,13 @@ import { dirname, join } from "node:path";
 import { config, isConfiguredForPayment } from "./config.js";
 import { requirePayment } from "./x402.js";
 import { bindRouter } from "./bind/routes.js";
-import { renderBadge } from "./badge.js";
+import { renderBadge, renderScoreBadge } from "./badge.js";
 import { loadExecution } from "./bind/store.js";
 import { warmCatalog } from "./bind/marketplace.js";
 import { renderMissionPage } from "./bind/mission-page.js";
 import { scheduleAutoprobe } from "./bind/autoprobe.js";
+import { renderAgentPage, scoreColor, scoreLabel } from "./bind/agent-page.js";
+import { agentEvidence } from "./bind/reputation.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "..", "public");
@@ -116,6 +118,23 @@ app.get("/badge/:executionId.svg", (req, res) => {
     : exec.status === "running" ? "running"
     : "fail";
   res.type("image/svg+xml").set("Cache-Control", "no-cache").send(renderBadge(state));
+});
+
+// Seller moat: a live, embeddable score badge for any marketplace agent, earned on paid
+// verified missions. Sellers embed it; a good score is advertising they can't buy.
+app.get("/badge/agent/:agentId.svg", (req, res) => {
+  const id = String(req.params.agentId).replace(/[^0-9]/g, "");
+  const { rep } = agentEvidence(id);
+  const color = rep ? scoreColor(rep.passRate, rep.missions) : "#6e7781";
+  res.type("image/svg+xml").set("Cache-Control", "max-age=300").send(renderScoreBadge(scoreLabel(rep), color));
+});
+
+// Public agent track-record page, with the embed snippet for the agent's builder.
+app.get("/a/:agentId", (req, res) => {
+  const id = String(req.params.agentId).replace(/[^0-9]/g, "");
+  if (!id) { res.status(404).send("unknown agent"); return; }
+  const { rep, evidence } = agentEvidence(id);
+  res.type("html").send(renderAgentPage(id, rep, evidence, config.publicBaseUrl));
 });
 
 // Public mission page: the goal, the crew, every payment and verification, the refund,

@@ -27,13 +27,21 @@ function textWidth(s: string): number {
   return Math.round(s.length * CHAR_WIDTH + PAD);
 }
 
+// The seller-moat surface: any marketplace agent can embed its live Bind track record
+// ("bind · 95% verified · 21 hires") on its own site. The score is earned on paid,
+// verified missions, so a good badge is real advertising and a bad one is unfakeable.
+export function renderScoreBadge(right: string, color: string): string {
+  return renderTwoSegment("bind", right, color);
+}
+
 export function renderBadge(state: BadgeState): string {
-  const left = "bind";
-  const right = LABELS[state];
+  return renderTwoSegment("bind", LABELS[state], COLORS[state]);
+}
+
+function renderTwoSegment(left: string, right: string, color: string): string {
   const leftWidth = textWidth(left);
   const rightWidth = textWidth(right);
   const totalWidth = leftWidth + rightWidth;
-  const color = COLORS[state];
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="20" role="img" aria-label="${left}: ${right}">
   <linearGradient id="s" x2="0" y2="100%">

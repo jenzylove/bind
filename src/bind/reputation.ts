@@ -95,6 +95,36 @@ export function allReputation(): AgentRep[] {
   return [...agentReputation().values()].sort((a, b) => b.missions - a.missions);
 }
 
+/** Mission history for one buyer wallet, newest first. Older records predate payer tracking. */
+export function historyFor(payer: string): Array<{ executionId: string; goal: string; status: string; totalPaid: number; refundedUsdt?: number; createdAt: string }> {
+  const p = (payer || "").toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(p)) return [];
+  return readExecutions()
+    .filter((e) => (e.payer || "").toLowerCase() === p)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .slice(0, 50)
+    .map((e) => ({ executionId: e.executionId, goal: e.goal, status: e.status, totalPaid: e.totalPaid, refundedUsdt: e.refundedUsdt, createdAt: e.createdAt }));
+}
+
+/** One agent's full track record + hire-by-hire evidence, for the public seller page. */
+export function agentEvidence(agentId: string): { rep: AgentRep | null; evidence: Array<{ at: string; goal: string; status: string; feeUsdt?: number; settlementTx?: string; detail?: string }> } {
+  const rep = [...agentReputation().values()].find((r) => r.agentId === agentId) ?? null;
+  const evidence: ReturnType<typeof agentEvidence>["evidence"] = [];
+  for (const exec of readExecutions()) {
+    for (const step of exec.stepResults ?? []) {
+      const match = step.agentId === agentId || (rep && step.agentName === rep.name);
+      if (!match) continue;
+      evidence.push({
+        at: exec.createdAt, goal: exec.goal, status: step.status, feeUsdt: step.feeUsdt,
+        settlementTx: step.paymentTxHash?.startsWith("0x") ? step.paymentTxHash : undefined,
+        detail: step.verificationResult?.detail,
+      });
+    }
+  }
+  evidence.sort((a, b) => (a.at < b.at ? 1 : -1));
+  return { rep, evidence: evidence.slice(0, 60) };
+}
+
 /**
  * The paid product: the full evidence behind the leaderboard. Per-agent hire-by-hire
  * outcomes with settlement tx hashes, newest first. This is data only Bind has — earned

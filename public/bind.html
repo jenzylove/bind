@@ -358,6 +358,12 @@
         <div class="error-msg" id="errorMsg"></div>
       </div>
 
+      <!-- Wallet-keyed mission history: appears when a wallet with past missions connects -->
+      <div class="goal-card" id="historyCard" style="max-width:900px;margin:18px auto 0;display:none">
+        <label class="goal-label">Your missions</label>
+        <div id="historyList" style="font-size:13.5px"></div>
+      </div>
+
       <div class="console" id="consoleSection">
         <div class="console-main">
           <p class="eyebrow" id="consoleEyebrow">Mission plan</p>
@@ -426,6 +432,25 @@ function setWalletBtn() {
   if (!b) return;
   b.textContent = wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : 'Connect wallet';
   b.title = wallet.address ? 'Click to disconnect' : 'Connect a wallet to pay for missions';
+  loadHistory();
+}
+
+// Mission history for the connected wallet — every past commission with its receipt page.
+async function loadHistory() {
+  const card = document.getElementById('historyCard'), list = document.getElementById('historyList');
+  if (!card || !list) return;
+  if (!wallet.address) { card.style.display = 'none'; return; }
+  try {
+    const j = await (await fetch('/bind/history/' + wallet.address)).json();
+    if (!j.missions || !j.missions.length) { card.style.display = 'none'; return; }
+    list.innerHTML = j.missions.slice(0, 8).map(m =>
+      `<div style="display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--navy-border)">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(m.goal||'').slice(0,80).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>
+        <span style="color:var(--ivory-dim);white-space:nowrap">${m.status === 'completed' ? '✓ complete' : m.status}${m.refundedUsdt ? ' · refunded' : ''}</span>
+        <a href="/m/${m.executionId}" target="_blank" rel="noopener" style="white-space:nowrap">receipt →</a>
+      </div>`).join('');
+    card.style.display = 'block';
+  } catch (e) { card.style.display = 'none'; }
 }
 
 // Clicking the pill connects when disconnected, and disconnects when connected.

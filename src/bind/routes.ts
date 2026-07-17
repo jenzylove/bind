@@ -7,7 +7,7 @@ import { executePlan, InsufficientBalanceError } from "./executor.js";
 import { savePlan, loadPlan, saveExecution, loadExecution } from "./store.js";
 import { findMatchingAgents } from "./marketplace.js";
 import { verifyPayment, commitPayment, releasePayment } from "./pay-verify.js";
-import { allReputation, ledgerDetail } from "./reputation.js";
+import { allReputation, ledgerDetail, historyFor } from "./reputation.js";
 import { requireX402 } from "./x402-gate.js";
 import { config } from "../config.js";
 
@@ -210,7 +210,20 @@ bindRouter.get("/agents", (_req, res) => {
       failed: r.failed,
       passRate: Math.round(r.passRate * 100) / 100,
       paidUsdt: Math.round(r.paidUsdt * 1e6) / 1e6,
+      trackRecordUrl: `${config.publicBaseUrl}/a/${r.agentId}`,
     })),
+  });
+});
+
+// Mission history for a buyer wallet: what they commissioned, what it cost, what came
+// back. Wallet addresses are already public on-chain (every payment is a visible USDT
+// transfer to Bind), so this exposes no more than the chain does — with better labels.
+bindRouter.get("/history/:address", (req, res) => {
+  const missions = historyFor(req.params.address);
+  res.json({
+    address: req.params.address,
+    missions: missions.map((m) => ({ ...m, missionUrl: `${config.publicBaseUrl}/m/${m.executionId}` })),
+    note: missions.length === 0 ? "No missions recorded for this wallet (history began 2026-07-16)." : undefined,
   });
 });
 

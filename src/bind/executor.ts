@@ -267,7 +267,8 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
 
   for (const step of plan.steps) {
     const result: ExecutionResult = {
-      step: step.step, agentName: step.agent.name, agentId: step.agent.agentId, status: "running",
+      step: step.step, agentName: step.agent.name, serviceName: step.agent.serviceName,
+      agentId: step.agent.agentId, status: "running",
       startedAt: new Date().toISOString(),
     };
 
@@ -291,6 +292,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
           agent = step.fallbackAgent;
           result.usedFallback = true;
           result.agentName = step.fallbackAgent.name;
+          result.serviceName = step.fallbackAgent.serviceName;
           result.agentId = step.fallbackAgent.agentId;
         }
       }
@@ -316,7 +318,10 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
         result.status = verdict.passed ? "passed" : "failed";
 
         if (verdict.passed) {
-          passedOutputs.push({ agent: agent.name, role: agent.category, output: call.output });
+          // The deliverable must reference agents by the name the buyer saw hired (the
+          // service), not the vendor name — "NewsSweep" in the text when the crew card
+          // said "Latest Crypto Headlines" reads like a fabrication.
+          passedOutputs.push({ agent: agent.serviceName || agent.name, role: agent.category, output: call.output });
         }
       }
     } catch (e) {

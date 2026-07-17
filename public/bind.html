@@ -823,8 +823,8 @@ async function renderExecution(data, rows) {
     const sr = data.stepResults[i];
     const row = rows[i];
     if (row) { row.classList.remove('running'); row.classList.add(sr.status); }
-    if (sr.status === 'passed') { addLog(`Paid ${sr.agentName}`, 'paid'); addLog('Verification passed', 'verified'); }
-    else { addLog(`${sr.agentName} — ${sr.error || sr.status}`, 'error'); }
+    if (sr.status === 'passed') { addLog(`Paid ${sr.serviceName || sr.agentName}`, 'paid'); addLog('Verification passed', 'verified'); }
+    else { addLog(`${sr.serviceName || sr.agentName} — ${sr.error || sr.status}`, 'error'); }
     await sleep(120);
   }
   addLog(`Mission complete. ${data.completedSteps}/${data.totalSteps} passed.`, 'success');
@@ -1009,7 +1009,7 @@ async function loadFromUrl() {
     const steps = document.getElementById('steps');
     steps.innerHTML = '';
     (data.stepResults||[]).forEach((sr) => {
-      steps.innerHTML += `<div class="step-row ${sr.status}" data-step="${sr.step}"><span class="step-dot"></span><div class="step-info"><div class="name">${sr.agentName}</div><div class="detail">${sr.verificationResult?.detail || sr.error || sr.status}</div>${sr.paymentTxHash && sr.paymentTxHash.startsWith('0x') ? `<div class="tx">paid: ${txLink(sr.paymentTxHash)}</div>` : ''}</div><span class="step-mark ${sr.status}">${sr.status==='passed'?'✓':'✕'}</span></div>`;
+      steps.innerHTML += `<div class="step-row ${sr.status}" data-step="${sr.step}"><span class="step-dot"></span><div class="step-info"><div class="name">${sr.serviceName || sr.agentName}</div><div class="detail">${sr.verificationResult?.detail || sr.error || sr.status}</div>${sr.paymentTxHash && sr.paymentTxHash.startsWith('0x') ? `<div class="tx">paid: ${txLink(sr.paymentTxHash)}</div>` : ''}</div><span class="step-mark ${sr.status}">${sr.status==='passed'?'✓':'✕'}</span></div>`;
     });
     document.getElementById('execBtn').style.display = 'none';
     document.getElementById('deliverableBlock').style.display = 'block';

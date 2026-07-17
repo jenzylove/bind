@@ -47,6 +47,9 @@ export interface BindPlan {
 export interface ExecutionResult {
   step: number;
   agentName: string;
+  /** What the buyer saw hired (the service), shown on all buyer-facing surfaces. The
+   * vendor agentName above stays untouched — reputation history is keyed on it. */
+  serviceName?: string;
   /** Kept so reputation can be aggregated per agent across missions, not by display name. */
   agentId?: string;
   /** What this agent was actually paid, when a real settlement happened. */

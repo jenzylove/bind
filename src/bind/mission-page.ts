@@ -36,7 +36,7 @@ export function renderMissionPage(exec: BindExecution): string {
     return `<div class="step">
       <div class="step-head">
         <span class="dot" style="background:${ok ? "#4c9a5f" : "#b0483d"}"></span>
-        <b>${esc(r.agentName)}</b>${r.usedFallback ? ' <span class="tag">stand-in</span>' : ""}
+        <b>${esc(r.serviceName || r.agentName)}</b>${r.usedFallback ? ' <span class="tag">stand-in</span>' : ""}
         <span class="right">${ok ? "verified" : esc(r.status)}</span>
       </div>
       <div class="step-meta">

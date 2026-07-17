@@ -190,12 +190,40 @@ function fillBoundParams(tpl: Record<string, string>, goal: string): Record<stri
   return body;
 }
 
-async function callAgent(step: BindStep, goal: string): Promise<CallResult> {
+// Resolve one dotted reference ("nodeId.data.0.symbol") against a node's stored output.
+function resolveRef(root: unknown, path: string[]): unknown {
+  let cur: unknown = root;
+  for (const seg of path) {
+    if (cur == null) return undefined;
+    cur = (cur as Record<string, unknown>)[seg];
+  }
+  return cur;
+}
+
+// Turn an inputMap into concrete params by reading verified upstream outputs. Only defined,
+// non-null values are injected — a missing reference is left out so we never send junk.
+function resolveInputMap(map: Record<string, string>, nodeOutputs: Map<string, unknown>): { params: Record<string, unknown>; unresolved: string[] } {
+  const params: Record<string, unknown> = {};
+  const unresolved: string[] = [];
+  for (const [param, ref] of Object.entries(map)) {
+    const [nodeId, ...path] = ref.split(".");
+    const val = resolveRef(nodeOutputs.get(nodeId), path);
+    if (val !== undefined && val !== null && val !== "") params[param] = val;
+    else unresolved.push(param);
+  }
+  return { params, unresolved };
+}
+
+async function callAgent(step: BindStep, goal: string, injected?: Record<string, unknown>): Promise<CallResult> {
   const endpoint = step.agent.endpoint;
   // Prefer the exact, tested params for this agent; then the proven hardcoded map; then infer.
-  const { body, method } = step.boundParams
+  let { body, method } = step.boundParams
     ? { body: fillBoundParams(step.boundParams, goal), method: "POST" as const }
     : getParams(endpoint, goal) ?? await inferParams(step.agent.serviceName, step.agentServiceDescription ?? "", endpoint, goal);
+
+  // Dependency-graph inputs override the guessed params: an upstream node's verified output
+  // (a resolved token address, a selected symbol) is authoritative for this step.
+  if (injected && body && typeof body === "object") body = { ...body, ...injected };
 
   let res = await httpCall(method, endpoint, body);
   if (res.status === 405 && method === "POST") res = await httpCall("GET", endpoint, null);
@@ -263,6 +291,9 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
   const executionId = presetExecutionId ?? randomUUID();
   const stepResults: ExecutionResult[] = [];
   const passedOutputs: AgentOutput[] = [];
+  // Verified output of each graph node, so a downstream step can consume it. Only outputs
+  // that PASSED verification land here — a failed node cannot feed the next step.
+  const nodeOutputs = new Map<string, unknown>();
   let totalPaid = 0;
 
   for (const step of plan.steps) {
@@ -272,8 +303,24 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
       startedAt: new Date().toISOString(),
     };
 
+    // Dependency gate: if an upstream node this step needs did not produce verified output,
+    // block this step rather than call (and pay) an agent with invented parameters.
+    const missingDep = (step.dependsOn ?? []).find((dep) => !nodeOutputs.has(dep));
+    if (missingDep) {
+      result.status = "blocked";
+      result.blockedBy = missingDep;
+      result.error = `blocked: upstream step "${missingDep}" did not deliver verified output`;
+      result.completedAt = new Date().toISOString();
+      stepResults.push(result);
+      continue;
+    }
+
+    // Resolve this step's inputs from the verified outputs of earlier nodes (the heart of
+    // graph execution: step 2 receives what step 1 actually produced).
+    const injected = step.inputMap ? resolveInputMap(step.inputMap, nodeOutputs).params : undefined;
+
     try {
-      let call = await callAgent(step, plan.goal);
+      let call = await callAgent(step, plan.goal, injected);
       let agent = step.agent;
 
       // Stand-in: if the primary produced nothing AND never took payment, the budget for
@@ -286,7 +333,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
           agentServiceDescription: step.fallbackServiceDescription ?? step.agentServiceDescription,
           boundParams: undefined,
         };
-        const fb = await callAgent(fbStep, plan.goal);
+        const fb = await callAgent(fbStep, plan.goal, injected);
         if (fb.output !== null && verifyStepOutput(fbStep, fb.output).passed) {
           call = fb;
           agent = step.fallbackAgent;
@@ -322,6 +369,8 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
           // service), not the vendor name — "NewsSweep" in the text when the crew card
           // said "Latest Crypto Headlines" reads like a fabrication.
           passedOutputs.push({ agent: agent.serviceName || agent.name, role: agent.category, output: call.output });
+          // Publish this node's verified output so downstream steps can consume it.
+          if (step.nodeId) nodeOutputs.set(step.nodeId, call.output);
         }
       }
     } catch (e) {

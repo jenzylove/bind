@@ -16,6 +16,16 @@ export interface BindStep {
   step: number;
   agent: BindAgent;
   agentServiceDescription?: string;
+  // --- Dependency-graph fields (optional; absent = the classic independent step) ---
+  /** Stable id for this node so downstream steps can reference its output. */
+  nodeId?: string;
+  /** Node ids whose VERIFIED output must exist before this step runs. A missing/failed
+   *  dependency blocks this step instead of calling the agent with invented params. */
+  dependsOn?: string[];
+  /** Maps a request param -> a dotted path into an upstream node's output, e.g.
+   *  { "tokenAddress": "resolve.data.0.tokenAddress" }. Resolved at execution time from
+   *  the verified outputs of earlier nodes. This is what makes step 2 consume step 1. */
+  inputMap?: Record<string, string>;
   inputTemplate: Record<string, string>;
   // Exact request body for a tested agent (from payable-agents.json). Values may contain
   // $TOKEN / $GOAL placeholders the executor substitutes at call time. When present, the
@@ -56,7 +66,9 @@ export interface ExecutionResult {
   feeUsdt?: number;
   /** True when the primary hire flaked and the stand-in delivered instead. */
   usedFallback?: boolean;
-  status: "pending" | "running" | "passed" | "failed" | "skipped" | "errored";
+  status: "pending" | "running" | "passed" | "failed" | "skipped" | "errored" | "blocked";
+  /** For a blocked step: which upstream dependency failed to deliver. */
+  blockedBy?: string;
   input?: unknown;
   output?: unknown;
   verificationResult?: {

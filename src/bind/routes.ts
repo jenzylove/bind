@@ -7,6 +7,8 @@ import { executePlan, InsufficientBalanceError } from "./executor.js";
 import { savePlan, loadPlan, saveExecution, loadExecution } from "./store.js";
 import { findMatchingAgents } from "./marketplace.js";
 import { verifyPayment, commitPayment, releasePayment } from "./pay-verify.js";
+import { settleAuthorization } from "./x402-settle.js";
+import { refundUnspent } from "./refund.js";
 import { allReputation, ledgerDetail, historyFor } from "./reputation.js";
 import { requireX402 } from "./x402-gate.js";
 import { config } from "../config.js";
@@ -38,6 +40,10 @@ bindRouter.get("/config", (_req, res) => {
     payTo: config.payToAddress,
     usdtAsset: config.usdtAsset,
     usdtDecimals: config.usdtDecimals,
+    // EIP-712 domain of the payment token, for the gasless signature flow. Must match the
+    // token contract exactly (proven by a successful on-chain settlement, 2026-07-16).
+    usdtName: "USD₮0",
+    usdtVersion: "1",
     chainId: 196,
     chainIdHex: "0xc4",
     requiresPayment: !ALLOW_FREE,
@@ -87,6 +93,9 @@ const executeHandler = async (req: any, res: any) => {
   // The verified payment tx, claimed but not burned. Burned only after the mission runs;
   // released if execution never starts, so the buyer can retry with the same payment.
   let claimedTx: string | undefined;
+  // Set when Bind itself settled the buyer's gasless authorization: that money has
+  // already moved, so if the mission then never runs, the agent budget goes straight back.
+  let refundOnFail: { payer: string; amount: number } | null = null;
   try {
     const body = req.body as { planId?: string } | undefined;
     if (!body?.planId) {
@@ -104,23 +113,53 @@ const executeHandler = async (req: any, res: any) => {
     // 0) and the internal sponsored-demo flag skip this.
     let payer: string | undefined;
     if (!ALLOW_FREE && plan.totalPriceUsdt > 0) {
+      const pa = (body as { paymentAuth?: { authorization?: any; signature?: string } }).paymentAuth;
       const paymentTxHash = (body as { paymentTxHash?: string }).paymentTxHash;
-      if (!paymentTxHash) {
-        res.status(402).json({
-          error: "payment_required",
-          message: `Connect your wallet and pay $${plan.totalPriceUsdt.toFixed(3)} USDT to Bind on X Layer to run this mission.`,
-          payTo: "pay-to-bind",
-          amountUsdt: plan.totalPriceUsdt,
-        });
-        return;
+
+      if (pa?.authorization && typeof pa.signature === "string") {
+        // Gasless buyer flow: the buyer signed an EIP-3009 transfer authorization; Bind
+        // settles it on-chain and pays the gas. The token contract enforces signature,
+        // amount, expiry, and one-time nonce — a bad or replayed authorization just fails.
+        const auth = pa.authorization;
+        if ((auth.to || "").toLowerCase() !== config.payToAddress.toLowerCase()) {
+          res.status(402).json({ error: "payment_invalid", message: "Authorization does not pay Bind." });
+          return;
+        }
+        let value: bigint;
+        try { value = BigInt(auth.value); } catch {
+          res.status(402).json({ error: "payment_invalid", message: "Unreadable authorization amount." });
+          return;
+        }
+        if (value < BigInt(Math.round(plan.totalPriceUsdt * 1e6))) {
+          res.status(402).json({ error: "payment_invalid", message: `Underpaid: authorized $${Number(value) / 1e6} but the mission costs $${plan.totalPriceUsdt}.` });
+          return;
+        }
+        const settleTx = await settleAuthorization(auth, pa.signature);
+        if (!settleTx) {
+          res.status(402).json({ error: "payment_invalid", message: "The signed authorization could not be settled on-chain (invalid, expired, or already used). You were not charged." });
+          return;
+        }
+        payer = auth.from;
+        claimedTx = settleTx;
+        refundOnFail = { payer: auth.from, amount: plan.agentCost ?? plan.totalPriceUsdt };
+      } else {
+        if (!paymentTxHash) {
+          res.status(402).json({
+            error: "payment_required",
+            message: `Connect your wallet and pay $${plan.totalPriceUsdt.toFixed(3)} USDT to Bind on X Layer to run this mission.`,
+            payTo: "pay-to-bind",
+            amountUsdt: plan.totalPriceUsdt,
+          });
+          return;
+        }
+        const verdict = await verifyPayment(paymentTxHash, plan.totalPriceUsdt);
+        if (!verdict.ok) {
+          res.status(402).json({ error: "payment_invalid", message: `Payment could not be verified: ${verdict.reason}` });
+          return;
+        }
+        payer = verdict.payer; // so unspent agent budget can go back to whoever paid
+        claimedTx = paymentTxHash;
       }
-      const verdict = await verifyPayment(paymentTxHash, plan.totalPriceUsdt);
-      if (!verdict.ok) {
-        res.status(402).json({ error: "payment_invalid", message: `Payment could not be verified: ${verdict.reason}` });
-        return;
-      }
-      payer = verdict.payer; // so unspent agent budget can go back to whoever paid
-      claimedTx = paymentTxHash;
     }
 
     // Async mode (the website uses this): answer with a running stub immediately and let
@@ -145,6 +184,9 @@ const executeHandler = async (req: any, res: any) => {
         })
         .catch((e) => {
           if (spentTx) releasePayment(spentTx);
+          // A gasless payment was already settled; the mission never ran, so the buyer's
+          // agent budget goes back (best-effort, on-chain).
+          if (refundOnFail) void refundUnspent(refundOnFail.amount, 0, refundOnFail.payer);
           const failed = { ...stub, status: "failed" as const, finalOutput: undefined, completedAt: new Date().toISOString(), error: (e as Error).message } as any;
           executions.set(executionId, failed);
           saveExecution(failed);
@@ -164,6 +206,7 @@ const executeHandler = async (req: any, res: any) => {
   } catch (e) {
     // Execution never happened — give the buyer their payment back to retry with.
     if (claimedTx) releasePayment(claimedTx);
+    if (refundOnFail) void refundUnspent(refundOnFail.amount, 0, refundOnFail.payer);
     // The wallet can't cover the plan — decline BEFORE any payment, with a clear reason.
     if (e instanceof InsufficientBalanceError) {
       res.status(402).json({

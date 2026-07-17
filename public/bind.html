@@ -355,6 +355,7 @@
           <button class="btn-cyan" onclick="createPlan()" id="planBtn">Plan workflow</button>
           <a class="btn-outline" href="?exec=1dca02fd-991c-44c0-88c6-717656cfdeca" style="text-decoration:none;display:flex;align-items:center;justify-content:center">See a real mission →</a>
         </div>
+        <p style="margin-top:10px;font-size:12.5px;color:var(--ivory-dim)">Payments are signed, not sent — you only need USDT on X Layer, no gas token. New to X Layer? <a href="https://web3.okx.com/xlayer/bridge" target="_blank" rel="noopener">Bridge funds in →</a></p>
         <div class="error-msg" id="errorMsg"></div>
       </div>
 
@@ -551,6 +552,20 @@ async function payForPlan(cfg) {
   if (amount <= 0n) throw new Error('This plan has no payable amount.');
 
   await ensureXLayer();
+
+  // Gasless path first: the buyer SIGNS a USDT transfer authorization (EIP 3009) and Bind
+  // submits it on chain, paying the gas itself. No OKB needed, works on mobile wallets.
+  try {
+    addLog(`Sign to authorize $${currentPlan.totalPriceUsdt.toFixed(3)} USDT (no gas needed)…`, 'info');
+    const auth = await signGaslessPayment(cfg, amount);
+    addLog('Payment authorized by signature. Bind settles it on-chain for you.', 'paid');
+    return { paymentAuth: auth };
+  } catch (e) {
+    // A rejection is the user's answer; anything else falls back to a direct transfer.
+    if (e && (e.code === 4001 || /reject|denied|cancel/i.test(e.message || ''))) throw new Error('Signature rejected in wallet.');
+    addLog('Signature flow unavailable in this wallet, falling back to a direct transfer (needs a little OKB for gas)…', 'info');
+  }
+
   const to = cfg.payTo.toLowerCase().replace(/^0x/, '').padStart(64, '0');
   const amt = amount.toString(16).padStart(64, '0');
   const data = '0xa9059cbb' + to + amt;
@@ -565,7 +580,35 @@ async function payForPlan(cfg) {
   if (ok === false) throw new Error('The payment transaction failed on-chain (reverted). You were not charged — check your USDT balance and that you have OKB for gas.');
   if (ok === null) throw new Error('Payment not confirmed in time. If it lands, retry — you will not be double-charged.');
   addLog('Payment confirmed on X Layer', 'verified');
-  return txHash;
+  return { paymentTxHash: txHash };
+}
+
+// EIP 3009 TransferWithAuthorization: a typed-data signature that authorizes exactly this
+// payment (amount, recipient, one-time nonce, 1h expiry). Signing is free; the server
+// submits it on-chain. The domain name/version must match the token contract's EIP-712
+// domain — served by /bind/config so there is one source of truth.
+async function signGaslessPayment(cfg, amount) {
+  const now = Math.floor(Date.now() / 1000);
+  const nonce = '0x' + [...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, '0')).join('');
+  const message = {
+    from: wallet.address, to: cfg.payTo, value: amount.toString(),
+    validAfter: '0', validBefore: String(now + 3600), nonce,
+  };
+  const typedData = {
+    types: {
+      EIP712Domain: [
+        { name: 'name', type: 'string' }, { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' }, { name: 'verifyingContract', type: 'address' }],
+      TransferWithAuthorization: [
+        { name: 'from', type: 'address' }, { name: 'to', type: 'address' }, { name: 'value', type: 'uint256' },
+        { name: 'validAfter', type: 'uint256' }, { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' }],
+    },
+    domain: { name: cfg.usdtName || 'USD₮0', version: cfg.usdtVersion || '1', chainId: 196, verifyingContract: cfg.usdtAsset },
+    primaryType: 'TransferWithAuthorization',
+    message,
+  };
+  const signature = await eth().request({ method: 'eth_signTypedData_v4', params: [wallet.address, JSON.stringify(typedData)] });
+  return { authorization: message, signature };
 }
 
 // true = mined & succeeded, false = mined & reverted, null = timed out.
@@ -716,7 +759,7 @@ async function executePlan() {
   const cfg = await loadCfg();
 
   // Buyer-pays flow: connect wallet and pay the quote on-chain before executing.
-  let paymentTxHash = null;
+  let payment = {};
   if (cfg.requiresPayment && currentPlan.totalPriceUsdt > 0) {
     if (cfg.paymentConfigured === false || !cfg.payTo || !cfg.usdtAsset) {
       addLog('Payment configuration missing on this server.', 'error');
@@ -729,7 +772,7 @@ async function executePlan() {
     }
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Awaiting payment…';
     try {
-      paymentTxHash = await payForPlan(cfg);
+      payment = await payForPlan(cfg);
     } catch (e) {
       addLog(`Payment failed: ${e.message || 'rejected'}`, 'error');
       showError(`Payment failed or was rejected: ${e.message || ''}`);
@@ -749,7 +792,7 @@ async function executePlan() {
     // works in the background — long missions no longer die at request timeouts.
     const { res, data } = await fetchJson('/bind/mission', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planId: currentPlan.planId, paymentTxHash, async: true }),
+      body: JSON.stringify({ planId: currentPlan.planId, ...payment, async: true }),
     }, 30000);
     if (!res.ok && res.status !== 202) { addLog(`Execution failed: ${data.message || ''}`, 'error'); showError(data.message || 'Execution failed'); btn.disabled = false; btn.innerHTML = 'Execute mission →'; return; }
     let final = data;

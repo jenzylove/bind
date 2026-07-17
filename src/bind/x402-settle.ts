@@ -37,9 +37,19 @@ export interface SettleVerdict {
   reason?: string;
 }
 
-interface Eip3009Auth {
+export interface Eip3009Auth {
   from: string; to: string; value: string;
   validAfter: string | number; validBefore: string | number; nonce: string;
+}
+
+/**
+ * Settle a signed EIP-3009 authorization on-chain from Bind's wallet (Bind pays gas).
+ * Used by the website's gasless buyer flow AND by seller-side x402 settlement — the
+ * contract enforces the signature and the one-time nonce, so a bad or replayed
+ * authorization simply fails. Returns the settlement tx hash, or null.
+ */
+export async function settleAuthorization(auth: Eip3009Auth, signature: string): Promise<string | null> {
+  return submitTransferWithAuthorization(auth, signature);
 }
 
 function word(hex: string): string { return hex.toLowerCase().replace(/^0x/, "").padStart(64, "0"); }

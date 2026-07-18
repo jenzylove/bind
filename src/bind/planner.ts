@@ -11,7 +11,7 @@ import { repSummary, isProvenBad } from "./reputation.js";
 
 // Guardrails so an auto-plan is never surprising or nonsensical.
 const PER_STEP_FEE_CEILING = 0.60;   // ceiling for tested-payable agents
-const UNTESTED_FEE_CEILING = 0.05;   // never gamble much on an unproven agent (e.g. Messari lists $0.10, then 403s or overcharges)
+const UNTESTED_FEE_CEILING = 0.12;   // reach genuinely useful unproven agents (travel, prediction ~$0.10) while capping the loss if one takes payment then fails; the dynamic fallback bounds this to one paid attempt per role
 const MAX_TOTAL_USDT = 1.5;          // cap the whole quote
 
 // Tested-payable-AND-data-usable agents. A live probe (scripts/probe-payability.mjs)
@@ -75,9 +75,23 @@ function chosenService(agent: MarketplaceAgent): MarketplaceService {
 }
 
 function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
-  const desc = `${agent.name} ${agent.description}`.toLowerCase();
+  const desc = `${agent.name} ${agent.description} ${agent.category}`.toLowerCase();
   const goalLower = goal.toLowerCase();
 
+  // Non-crypto domains first, so a football or travel agent isn't misfiled as "market_data"
+  // just because its description happens to mention a price.
+  if (/predict|odds|forecast|polymarket|betting|upset|world.?cup|match outcome|who will win/.test(desc)) {
+    return "prediction";
+  }
+  if (/travel|trip|flight|itinerary|hotel|destination|things to do|tourism/.test(desc)) {
+    return "travel";
+  }
+  if (/image|logo|brand|\bart\b|design|music|song|avatar|sticker|generat/.test(desc)) {
+    return "creative";
+  }
+  if (/health|diet|fitness|nutrition|calorie|workout|wellness|medical/.test(desc)) {
+    return "health";
+  }
   if (desc.includes("security") || desc.includes("scan") || desc.includes("risk") || desc.includes("audit") || desc.includes("verify")) {
     return "security";
   }

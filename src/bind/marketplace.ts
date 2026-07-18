@@ -163,14 +163,21 @@ function scoreAgentRelevance(agent: MarketplaceAgent, goal: string): number {
     if (word.length > 2 && nameAndDesc.includes(word)) score += 5;
   }
 
-  // Category-based scoring
+  // Domain-based scoring. Bind is a general contractor, so this spans well beyond crypto:
+  // a goal's domain signals boost agents that serve that domain, whether it's a token audit,
+  // a football prediction, a trip plan, or a logo.
   const catSigs: Record<string, string[]> = {
-    SECURITY: ["security", "scan", "audit", "risk", "verify", "honeypot", "safe", "certik"],
-    MARKET_DATA: ["market", "price", "data", "trading", "funding"],
-    SENTIMENT: ["sentiment", "social", "news", "twitter", "kol"],
-    DEFI: ["swap", "yield", "stake", "defi", "otto", "barker"],
-    CONTENT: ["content", "image", "art", "video", "create"],
-    ONCHAIN: ["onchain", "blockchain", "explorer", "wallet"],
+    SECURITY: ["security", "scan", "audit", "risk", "verify", "honeypot", "safe", "certik", "rug"],
+    MARKET_DATA: ["market", "price", "data", "trading", "funding", "chart", "candle"],
+    SENTIMENT: ["sentiment", "social", "news", "twitter", "kol", "mood", "buzz"],
+    DEFI: ["swap", "yield", "stake", "defi", "otto", "barker", "liquidity", "pool"],
+    CONTENT: ["content", "image", "art", "video", "create", "logo", "brand", "design", "music", "song", "generate", "meme", "avatar", "sticker"],
+    ONCHAIN: ["onchain", "blockchain", "explorer", "wallet", "holder", "contract"],
+    PREDICTION: ["prediction", "predict", "odds", "forecast", "who will", "who is gonna", "gonna win", "betting", "polymarket", "upset", "chances"],
+    SPORTS: ["sports", "football", "soccer", "match", "team", "league", "cup", "world cup", "fixture", "score"],
+    TRAVEL: ["travel", "trip", "flight", "itinerary", "hotel", "visit", "tour", "destination", "things to do", "what to do in"],
+    HEALTH: ["health", "diet", "fitness", "nutrition", "food", "calorie", "workout", "medical", "bmi", "wellness"],
+    LIFE: ["fortune", "astrology", "destiny", "horoscope", "recipe", "game", "rpg", "space", "weather"],
   };
 
   for (const [, signals] of Object.entries(catSigs)) {
@@ -181,6 +188,11 @@ function scoreAgentRelevance(agent: MarketplaceAgent, goal: string): number {
       }
     }
   }
+
+  // Marketplace-category alignment: if the agent's own listed category words appear in the
+  // goal (e.g. a WORLD_CUP agent for a World Cup goal, an ART_CREATION agent for a logo).
+  const catWords = (agent.category || "").toLowerCase().replace(/_/g, " ").split(" ");
+  for (const w of catWords) if (w.length > 3 && goalLower.includes(w)) score += 8;
 
   // Reputation bonus
   score += Math.min(agent.rating / 10, 5);

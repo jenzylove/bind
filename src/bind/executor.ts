@@ -323,25 +323,36 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
       let call = await callAgent(step, plan.goal, injected);
       let agent = step.agent;
 
-      // Stand-in: if the primary produced nothing AND never took payment, the budget for
-      // that hire is untouched, so we can hire the backup within the same quote rather
-      // than hand the buyer a thinner brief. We never do this after a real settlement.
-      if ((call.output === null || !verifyStepOutput(step, call.output).passed) && !call.paid && step.fallbackAgent) {
+      // Dynamic fallback — the general-contractor behaviour. Work down the ranked backup
+      // agents (any eligible marketplace agent, not a fixed list) until one delivers
+      // verified output. We only try a backup while the current attempt produced nothing or
+      // failed verification AND took no payment: a dead or useless agent (HTTP 530, empty,
+      // error body) is replaced for free, but once money has actually moved we stop, so a
+      // buyer is never charged twice for one role.
+      const backups = step.candidates?.length ? step.candidates : (step.fallbackAgent ? [step.fallbackAgent] : []);
+      for (const cand of backups) {
+        if (call.paid || (call.output !== null && verifyStepOutput(step, call.output).passed)) break;
         const fbStep: BindStep = {
           ...step,
-          agent: step.fallbackAgent,
-          agentServiceDescription: step.fallbackServiceDescription ?? step.agentServiceDescription,
+          agent: cand,
+          agentServiceDescription: cand.serviceDescription ?? step.fallbackServiceDescription ?? step.agentServiceDescription,
           boundParams: undefined,
         };
         const fb = await callAgent(fbStep, plan.goal, injected);
-        if (fb.output !== null && verifyStepOutput(fbStep, fb.output).passed) {
+        const passed = fb.output !== null && verifyStepOutput(fbStep, fb.output).passed;
+        if (passed || fb.paid) {
+          // Either this backup delivered, or it took payment (so we must record it and stop
+          // spending). In both cases it becomes the recorded attempt for this step.
           call = fb;
-          agent = step.fallbackAgent;
+          agent = cand;
           result.usedFallback = true;
-          result.agentName = step.fallbackAgent.name;
-          result.serviceName = step.fallbackAgent.serviceName;
-          result.agentId = step.fallbackAgent.agentId;
+          result.agentName = cand.name;
+          result.serviceName = cand.serviceName;
+          result.agentId = cand.agentId;
+          if (passed) break;
+          break; // paid-but-failed: stop, refund logic handles the loss
         }
+        // Unpaid failure: leave `call` on the prior attempt and try the next candidate.
       }
 
       result.input = call.input;

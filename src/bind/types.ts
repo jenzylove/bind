@@ -10,6 +10,9 @@ export interface BindAgent {
   feeAmount: number;         // USDT
   feeToken: string;
   category: "security" | "sentiment" | "market_data" | "content" | "analysis";
+  /** The service description, so the executor can infer params for a fallback agent
+   *  it has never called before (dynamic contractor: try any agent, not a fixed list). */
+  serviceDescription?: string;
 }
 
 export interface BindStep {
@@ -38,6 +41,9 @@ export interface BindStep {
   fallbackAgent?: BindAgent;
   /** Service description for the stand-in, so param inference works for it too. */
   fallbackServiceDescription?: string;
+  /** Ranked backup agents for this role — ANY eligible marketplace agent, not just the
+   *  proven set. The executor tries them in order until one delivers verified output. */
+  candidates?: BindAgent[];
   condition?: string;
 }
 

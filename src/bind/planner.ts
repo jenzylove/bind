@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BindPlan, BindStep, PlanRequest } from "./types.js";
+import type { BindAgent, BindPlan, BindStep, PlanRequest } from "./types.js";
 import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceService } from "./marketplace.js";
 import { selectAgents, type SelectCandidate } from "./select.js";
 import { repSummary, isProvenBad } from "./reputation.js";
@@ -212,27 +212,40 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     };
   }
 
-  // Nominate a stand-in for each hire: a tested-payable agent covering the same role that
-  // wasn't already hired. If the primary flakes without taking payment, the executor can
-  // hire the stand-in inside the same budget instead of shipping a thinner brief.
+  // Ranked backups for each hire — the heart of the general-contractor behaviour. NOT
+  // restricted to the proven set: any eligible marketplace agent covering the same role is
+  // a candidate. `eligible` is already sorted proven-first then by fit, so slicing it gives
+  // "try the agents we trust, then the untested ones" for free. The executor works down this
+  // list until one delivers verified output — so a dead or useless agent no longer sinks the
+  // whole mission (this is the fix for a single agent's HTTP 530 killing a one-agent brief).
   const selectedIds = new Set(selectedAgents.map((a) => a.agentId));
-  function standInFor(agent: MarketplaceAgent): MarketplaceAgent | undefined {
+  function candidatesFor(agent: MarketplaceAgent, max = 3): MarketplaceAgent[] {
     const role = determineAgentRole(agent, req.goal);
+    const feeCap = Math.max(chosenService(agent).feeAmount + 0.02, UNTESTED_FEE_CEILING);
     return eligible
       .map((e) => e.agent)
-      .find((cand) =>
+      .filter((cand) =>
         !selectedIds.has(cand.agentId) &&
-        PAYABLE_AGENT_IDS.has(cand.agentId) &&
+        cand.agentId !== agent.agentId &&
         determineAgentRole(cand, req.goal) === role &&
-        chosenService(cand).feeAmount <= chosenService(agent).feeAmount + 0.02);
+        chosenService(cand).feeAmount <= feeCap)
+      .slice(0, max);
+  }
+  function toBindAgent(cand: MarketplaceAgent): BindAgent {
+    const cs = chosenService(cand);
+    return {
+      agentId: cand.agentId, name: cand.name, serviceId: cs.serviceId, serviceName: cs.serviceName,
+      endpoint: cs.endpoint, feeAmount: cs.feeAmount, feeToken: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+      category: determineAgentRole(cand, req.goal) as any,
+      serviceDescription: cs.description || cand.description,
+    };
   }
 
   const steps: BindStep[] = selectedAgents.map((agent, i) => {
     const svc = chosenService(agent);
     // Store the full service description for param inference
     const agentServiceDescription = svc.description || agent.description;
-    const backup = standInFor(agent);
-    const backupSvc = backup ? chosenService(backup) : undefined;
+    const candidates = candidatesFor(agent).map(toBindAgent);
     return {
       step: i + 1,
       agent: {
@@ -249,17 +262,10 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       boundParams: PAYABLE_ENDPOINTS.get(agent.agentId)?.params ?? undefined,
       // Shown to the buyer so the crew is justified by evidence, not vibes.
       track: repSummary(agent.agentId, agent.name) ?? undefined,
-      fallbackAgent: backup && backupSvc ? {
-        agentId: backup.agentId,
-        name: backup.name,
-        serviceId: backupSvc.serviceId,
-        serviceName: backupSvc.serviceName,
-        endpoint: backupSvc.endpoint,
-        feeAmount: backupSvc.feeAmount,
-        feeToken: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
-        category: determineAgentRole(backup, req.goal) as any,
-      } : undefined,
-      fallbackServiceDescription: backupSvc ? (backupSvc.description || backup!.description) : undefined,
+      // Ranked backups (proven first, then untested) the executor works down on failure.
+      candidates,
+      fallbackAgent: candidates[0],
+      fallbackServiceDescription: candidates[0]?.serviceDescription,
       inputTemplate: { q: req.goal },
       verificationType: "data",
       verificationCriteria: "Agent returned structured output",

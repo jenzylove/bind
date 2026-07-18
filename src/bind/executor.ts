@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { BindExecution, BindPlan, BindStep, ExecutionResult } from "./types.js";
-import { verifyStepOutput } from "./verify.js";
+import { verifyStepOutput, checkRelevance } from "./verify.js";
 import { anchorExecution } from "./receipt.js";
 import { inferParams } from "./agent-infer.js";
 import { synthesizeDeliverable, type AgentOutput } from "./synthesize.js";
@@ -276,6 +276,17 @@ function safeJson(text: string): unknown {
   try { return JSON.parse(text || "{}"); } catch { return text; }
 }
 
+// Two-stage verification: cheap structural check first, then (only if it passes) an LLM
+// relevance check. Off-topic-but-well-formed output fails, so Bind neither counts nor keeps
+// paying for data that does not address the goal.
+async function evaluateOutput(step: BindStep, goal: string, output: unknown): Promise<{ passed: boolean; detail: string }> {
+  const structural = verifyStepOutput(step, output);
+  if (!structural.passed) return structural;
+  const rel = await checkRelevance(goal, step.agent.serviceName, step.agentServiceDescription ?? "", output);
+  if (!rel.relevant) return { passed: false, detail: `off-topic — did not address the goal: ${rel.reason}` };
+  return { passed: true, detail: structural.detail };
+}
+
 export async function executePlan(plan: BindPlan, payer?: string, presetExecutionId?: string): Promise<BindExecution> {
   await walletLogin();
 
@@ -322,16 +333,21 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
     try {
       let call = await callAgent(step, plan.goal, injected);
       let agent = step.agent;
+      // Evaluate = structural check, then (only if it passes) an LLM relevance check. An
+      // agent that returns well-formed but off-topic data (whale wallets for a football
+      // question) FAILS here, exactly like an empty or errored response.
+      let outcome = call.output === null
+        ? { passed: false, detail: call.error ?? "no output" }
+        : await evaluateOutput(step, plan.goal, call.output);
 
       // Dynamic fallback — the general-contractor behaviour. Work down the ranked backup
       // agents (any eligible marketplace agent, not a fixed list) until one delivers
-      // verified output. We only try a backup while the current attempt produced nothing or
-      // failed verification AND took no payment: a dead or useless agent (HTTP 530, empty,
-      // error body) is replaced for free, but once money has actually moved we stop, so a
-      // buyer is never charged twice for one role.
+      // RELEVANT verified output. We only try a backup while the current attempt failed AND
+      // took no payment: a dead, useless, or off-topic-but-free agent is replaced for free,
+      // but once money has actually moved we stop, so a buyer is never charged twice.
       const backups = step.candidates?.length ? step.candidates : (step.fallbackAgent ? [step.fallbackAgent] : []);
       for (const cand of backups) {
-        if (call.paid || (call.output !== null && verifyStepOutput(step, call.output).passed)) break;
+        if (call.paid || outcome.passed) break;
         const fbStep: BindStep = {
           ...step,
           agent: cand,
@@ -339,18 +355,20 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
           boundParams: undefined,
         };
         const fb = await callAgent(fbStep, plan.goal, injected);
-        const passed = fb.output !== null && verifyStepOutput(fbStep, fb.output).passed;
-        if (passed || fb.paid) {
-          // Either this backup delivered, or it took payment (so we must record it and stop
-          // spending). In both cases it becomes the recorded attempt for this step.
+        const fbOutcome = fb.output === null
+          ? { passed: false, detail: fb.error ?? "no output" }
+          : await evaluateOutput(fbStep, plan.goal, fb.output);
+        if (fbOutcome.passed || fb.paid) {
+          // Either this backup delivered relevant work, or it took payment (record it and
+          // stop spending). It becomes the recorded attempt for this step.
           call = fb;
           agent = cand;
+          outcome = fbOutcome;
           result.usedFallback = true;
           result.agentName = cand.name;
           result.serviceName = cand.serviceName;
           result.agentId = cand.agentId;
-          if (passed) break;
-          break; // paid-but-failed: stop, refund logic handles the loss
+          break;
         }
         // Unpaid failure: leave `call` on the prior attempt and try the next candidate.
       }
@@ -358,7 +376,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
       result.input = call.input;
       if (call.output === null) {
         result.status = "errored";
-        result.error = call.error ?? "no output";
+        result.error = outcome.detail;
       } else {
         result.output = call.output;
         if (call.paid) {
@@ -369,13 +387,13 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
           result.paymentTxHash = "no_payment_needed";
         }
 
-        // Verify the output before it counts toward the deliverable. A failing
-        // step does not get merged into the synthesized result.
-        const verdict = verifyStepOutput(step, call.output);
-        result.verificationResult = { passed: verdict.passed, detail: verdict.detail };
-        result.status = verdict.passed ? "passed" : "failed";
+        // The step counts toward the deliverable only if it passed BOTH structure and
+        // relevance. Off-topic paid output is marked failed, so the refund logic returns
+        // its cost to the buyer and the synthesizer never sees it.
+        result.verificationResult = { passed: outcome.passed, detail: outcome.detail };
+        result.status = outcome.passed ? "passed" : "failed";
 
-        if (verdict.passed) {
+        if (outcome.passed) {
           // The deliverable must reference agents by the name the buyer saw hired (the
           // service), not the vendor name — "NewsSweep" in the text when the crew card
           // said "Latest Crypto Headlines" reads like a fabrication.
@@ -409,13 +427,16 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
   // not deliver a passing output — whether it never took payment, or it took payment and
   // then failed inspection. In the second case Bind absorbs the loss to that agent; that is
   // the cost of being the trusted layer, and it makes "you never pay for work that fails
-  // verification" actually true. Bind's platform fee is earned and stays. Best-effort: a
-  // refund failure never fails the mission.
+  // verification" actually true. Bind's platform fee is normally earned and stays — EXCEPT
+  // when the mission delivered NOTHING verified: then Bind did not deliver, so the fee is
+  // refunded too (you never pay for a non-answer). Best-effort: a refund failure never fails
+  // the mission.
   const quotedAgentCost = plan.agentCost ?? plan.steps.reduce((s, x) => s + x.agent.feeAmount, 0);
   const deliveredCost = stepResults
     .filter((r) => r.status === "passed")
     .reduce((s, r) => s + (r.feeUsdt ?? 0), 0);
-  const refund = await refundUnspent(quotedAgentCost, deliveredCost, payer);
+  const refundBase = completed === 0 ? quotedAgentCost + (plan.platformFee ?? 0) : quotedAgentCost;
+  const refund = await refundUnspent(refundBase, deliveredCost, payer);
   if (refund.refunded > 0) {
     execution.refundedUsdt = refund.refunded;
     execution.refundTxHash = refund.txHash;

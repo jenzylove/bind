@@ -6,7 +6,53 @@
 // This is structural + error verification — honest about what it does. It does not
 // claim to judge semantic quality; it guarantees the output is a real, non-error,
 // non-empty result from the agent.
+//
+// Relevance verification (checkRelevance) adds the second, semantic gate: an agent can
+// return perfectly-formed JSON that has nothing to do with the goal (a Polymarket
+// whale-wallet feed answering a football-match question). Structure alone passes that;
+// relevance catches it, so Bind stops paying for and "passing" off-topic data.
 import type { BindStep } from "./types.js";
+import Anthropic from "@anthropic-ai/sdk";
+
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+
+/**
+ * Judge whether an agent's output genuinely helps answer the goal. Fail-OPEN: if there is
+ * no API key or the call errors, we do NOT reject (relevance is an extra filter, never a
+ * single point of failure that could sink a good mission).
+ */
+export async function checkRelevance(
+  goal: string,
+  serviceName: string,
+  serviceDescription: string,
+  output: unknown,
+): Promise<{ relevant: boolean; reason: string }> {
+  if (!ANTHROPIC_KEY) return { relevant: true, reason: "relevance check unavailable" };
+  const text = typeof output === "string" ? output : JSON.stringify(output);
+  const snippet = text.slice(0, 2500);
+  try {
+    const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
+    const resp = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 150,
+      system:
+        "You judge whether an agent's returned data genuinely helps answer a user's goal. " +
+        "Be strict about SUBJECT match: data about a different subject (e.g. crypto whale wallets when the goal is a football match, or generic top-trader lists when a specific token was asked about) is NOT relevant even if well-formed. " +
+        "But accept partial or imperfect data that still speaks to the goal's actual subject. " +
+        'Return ONLY JSON: {"relevant": true|false, "reason": "<=15 words"}.',
+      messages: [
+        { role: "user", content: [{ type: "text", text: `Goal: ${goal}\nAgent: ${serviceName} — ${serviceDescription}\nReturned data:\n${snippet}\n\nDoes this data genuinely help answer the goal?` }] },
+      ],
+    });
+    const block = resp.content.find((b) => b.type === "text");
+    const t = block && "text" in block ? block.text : "";
+    const json = t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1);
+    const parsed = JSON.parse(json);
+    return { relevant: parsed.relevant !== false, reason: String(parsed.reason || "").slice(0, 80) };
+  } catch {
+    return { relevant: true, reason: "relevance check failed open" };
+  }
+}
 
 export interface StepVerdict {
   passed: boolean;

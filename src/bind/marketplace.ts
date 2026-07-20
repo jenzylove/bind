@@ -4,11 +4,17 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 
 const execFileAsync = promisify(execFile);
 const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SEARCH_CONCURRENCY = 8;       // parallel marketplace searches
+// Last good catalog, persisted to the volume. If the OKX search API is unreachable at
+// boot (it happens), Bind serves this instead of quoting "no compatible agents" for every
+// goal — a marketplace blip must not zero the product.
+const CATALOG_FILE = join(process.env.BIND_DATA_DIR ?? "data", "catalog-cache.json");
 
 interface CachedCatalog {
   timestamp: number;
@@ -125,12 +131,34 @@ async function fetchAllA2McpAgents(): Promise<MarketplaceAgent[]> {
   return allAgents;
 }
 
+function loadPersistedCatalog(): void {
+  if (catalogCache) return;
+  try {
+    const saved = JSON.parse(readFileSync(CATALOG_FILE, "utf8")) as CachedCatalog;
+    if (Array.isArray(saved.agents) && saved.agents.length > 0) {
+      // Mark it stale so a live refresh still kicks off, but serve it immediately.
+      catalogCache = { timestamp: 0, agents: saved.agents };
+      console.log(`[bind] catalog restored from disk: ${saved.agents.length} agents (stale, refreshing)`);
+    }
+  } catch { /* no persisted catalog yet */ }
+}
+
+function persistCatalog(agents: MarketplaceAgent[]): void {
+  try {
+    mkdirSync(process.env.BIND_DATA_DIR ?? "data", { recursive: true });
+    writeFileSync(CATALOG_FILE, JSON.stringify({ timestamp: Date.now(), agents }));
+  } catch { /* best-effort */ }
+}
+
 function startRefresh(): Promise<MarketplaceAgent[]> {
   if (refreshing) return refreshing;              // share one sweep across callers
   refreshing = fetchAllA2McpAgents()
     .then((agents) => {
       // Never clobber a good cache with an empty sweep (e.g. a transient login failure).
-      if (agents.length > 0) catalogCache = { timestamp: Date.now(), agents };
+      if (agents.length > 0) {
+        catalogCache = { timestamp: Date.now(), agents };
+        persistCatalog(agents);
+      }
       return catalogCache?.agents ?? agents;
     })
     .catch(() => catalogCache?.agents ?? [])
@@ -141,15 +169,28 @@ function startRefresh(): Promise<MarketplaceAgent[]> {
 // Stale-while-revalidate: a warm cache answers instantly; an expired one is still served
 // immediately while a refresh runs in the background. Only a completely cold start waits.
 async function getCatalog(): Promise<MarketplaceAgent[]> {
+  loadPersistedCatalog();
   const now = Date.now();
   if (catalogCache && now - catalogCache.timestamp < CACHE_TTL_MS) return catalogCache.agents;
   if (catalogCache) { void startRefresh(); return catalogCache.agents; }
   return startRefresh();
 }
 
-// Called at boot so the first real user never pays the cold-start cost.
+// Called at boot so the first real user never pays the cold-start cost. If the sweep comes
+// back empty (OKX API unreachable), keep retrying in the background until it succeeds —
+// an empty catalog means every quote fails, which is an outage, not a degradation.
 export async function warmCatalog(): Promise<number> {
   const agents = await getCatalog();
+  if (agents.length === 0) {
+    const retry = setInterval(() => {
+      void startRefresh().then((a) => {
+        if (a.length > 0) {
+          console.log(`[bind] catalog recovered: ${a.length} agents`);
+          clearInterval(retry);
+        }
+      });
+    }, 2 * 60 * 1000);
+  }
   return agents.length;
 }
 

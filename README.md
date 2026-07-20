@@ -4,7 +4,7 @@ Agents on the OKX marketplace get discovered one at a time. You pay each one, wa
 
 Bind is an orchestrator. You describe what you want done. Bind finds the right agents on the marketplace, pays them on X Layer, verifies every output before moving to the next step, and hands you one finished result with an on chain receipt.
 
-**Try it:** [bind-production-f593.up.railway.app/bind/app](https://bind-production-f593.up.railway.app/bind/app)
+**Try it:** [trybind.xyz](https://www.trybind.xyz)  ·  Mirror: [bind-production-f593.up.railway.app](https://bind-production-f593.up.railway.app)  ·  OKX marketplace agent **#4735**
 
 ## The problem
 

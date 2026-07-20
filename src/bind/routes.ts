@@ -89,6 +89,23 @@ bindRouter.post("/plan", requireX402(config.prices.bind_plan, PLAN_DESC), planHa
 bindRouter.get("/plan", requireX402(config.prices.bind_plan, PLAN_DESC), (_req, res) => res.status(405).json({ error: "method_not_allowed", message: "POST a goal to run this service." }));
 bindRouter.post("/quote", planHandler);
 
+// Shrink a plan to fit what an x402 buyer actually paid: drop steps (cheapest-first
+// victims are the tail — the router ranks best-first) until agentCost + fee fits, and set
+// agentCost so the refund math returns every unspent cent of the payment to the buyer.
+function trimPlanToBudget(plan: NonNullable<ReturnType<typeof loadPlan>>, paidUsdt: number): void {
+  const fee = () => Math.round((plan.steps.reduce((s, x) => s + x.agent.feeAmount, 0) * 0.02 + 0.03) * 1e6) / 1e6;
+  while (plan.steps.length && plan.steps.reduce((s, x) => s + x.agent.feeAmount, 0) + fee() > paidUsdt) {
+    plan.steps.pop();
+  }
+  plan.steps.forEach((s, i) => { s.step = i + 1; });
+  plan.platformFee = fee();
+  // The whole payment minus the earned fee is the buyer's agent budget: anything the
+  // mission does not spend on verified work flows back to them via refundUnspent.
+  plan.agentCost = Math.max(Math.round((paidUsdt - plan.platformFee) * 1e6) / 1e6, 0);
+  plan.totalPriceUsdt = paidUsdt;
+  plan.priceBreakdown = plan.steps.map((s) => ({ agentName: s.agent.name, fee: s.agent.feeAmount }));
+}
+
 const executeHandler = async (req: any, res: any) => {
   // The verified payment tx, claimed but not burned. Burned only after the mission runs;
   // released if execution never starts, so the buyer can retry with the same payment.
@@ -97,22 +114,44 @@ const executeHandler = async (req: any, res: any) => {
   // already moved, so if the mission then never runs, the agent budget goes straight back.
   let refundOnFail: { payer: string; amount: number } | null = null;
   try {
-    const body = req.body as { planId?: string } | undefined;
-    if (!body?.planId) {
-      res.status(400).json({ error: "bad_request", message: "Provide a 'planId' from a previous /bind/plan call." });
+    const body = req.body as { planId?: string; goal?: string } | undefined;
+    // Settlement handed over by the x402 gate: this buyer already paid on-chain.
+    const x402 = res.locals?.x402 as { settled: boolean; txHash?: string; payer?: string; paidUsdt: number } | undefined;
+
+    let plan = body?.planId ? (plans.get(body.planId) ?? loadPlan(body.planId)) : undefined;
+    if (!plan && typeof body?.goal === "string" && body.goal.trim()) {
+      // Single-call service: a marketplace buyer pays once and sends a goal — Bind plans
+      // AND executes inside that one paid call, sized to what they paid.
+      plan = await createPlan({ goal: body.goal.trim() });
+      if (x402?.settled) trimPlanToBudget(plan, x402.paidUsdt);
+      if (plan.steps.length === 0) {
+        // Nothing hireable for this goal (or budget) — the buyer already paid, so give it back.
+        if (x402?.settled && x402.payer) void refundUnspent(x402.paidUsdt, 0, x402.payer);
+        res.status(422).json({ error: "no_crew", message: (plan.note ?? "No agent on the marketplace can genuinely deliver this goal.") + " Your payment has been refunded on-chain.", refunded: x402?.settled ? x402.paidUsdt : 0 });
+        return;
+      }
+      plans.set(plan.planId, plan);
+      savePlan(plan);
+    }
+    if (body?.planId && !plan) {
+      res.status(404).json({ error: "not_found", message: `No plan found for id '${body.planId}'.` });
       return;
     }
-
-    const plan = plans.get(body.planId) ?? loadPlan(body.planId);
     if (!plan) {
-      res.status(404).json({ error: "not_found", message: `No plan found for id '${body.planId}'.` });
+      res.status(400).json({ error: "bad_request", message: "Provide a 'goal' to run a mission in one call, or a 'planId' from a previous /bind/plan call." });
       return;
     }
 
     // Verify the user paid the quote on-chain before we spend anything. Free plans (total
     // 0) and the internal sponsored-demo flag skip this.
     let payer: string | undefined;
-    if (!ALLOW_FREE && plan.totalPriceUsdt > 0) {
+    if (!ALLOW_FREE && plan.totalPriceUsdt > 0 && x402?.settled) {
+      // The x402 gate already settled this buyer's payment on-chain. That IS the payment —
+      // never re-demand one. Wire the payer through so verification failures and unspent
+      // budget refund to the right wallet.
+      payer = x402.payer;
+      if (x402.payer) refundOnFail = { payer: x402.payer, amount: plan.agentCost ?? plan.totalPriceUsdt };
+    } else if (!ALLOW_FREE && plan.totalPriceUsdt > 0) {
       const pa = (body as { paymentAuth?: { authorization?: any; signature?: string } }).paymentAuth;
       const paymentTxHash = (body as { paymentTxHash?: string }).paymentTxHash;
 

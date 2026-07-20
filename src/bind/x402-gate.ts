@@ -66,6 +66,10 @@ function send402(req: Request, res: Response, amountBaseUnits: string, descripti
  */
 export function requireX402(amountBaseUnits: string, description: string) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Never settle on GET: those routes exist so validators can fetch the challenge. A
+    // paid GET would charge the buyer for a 405 — challenge-only keeps probes free.
+    if (req.method === "GET") { send402(req, res, amountBaseUnits, description); return; }
+
     const credential = paymentHeader(req);
     if (!credential) { send402(req, res, amountBaseUnits, description); return; }
 
@@ -78,6 +82,14 @@ export function requireX402(amountBaseUnits: string, description: string) {
       const receipt = Buffer.from(JSON.stringify({ success: true, transaction: verdict.txHash })).toString("base64");
       res.setHeader("PAYMENT-RESPONSE", receipt);
       res.setHeader("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE");
+      // Hand the settlement to the route handler: the buyer HAS paid, and the handler
+      // must treat that as payment (and know who to refund) — never re-demand payment.
+      res.locals.x402 = {
+        settled: true,
+        txHash: verdict.txHash,
+        payer: verdict.payer,
+        paidUsdt: Number(amountBaseUnits) / 1e6,
+      };
     }
     next();
   };

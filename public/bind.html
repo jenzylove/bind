@@ -274,7 +274,7 @@
       <p class="section-eyebrow">Agent orchestration decoded</p>
       <h2 class="section-h">The marketplace has sellers. Bind is the buyer.</h2>
       <p class="section-copy">Instead of asking users to discover agents, negotiate payments, retry broken endpoints, and stitch outputs together, Bind turns a goal into a verified multi-agent workflow.</p>
-      <div class="wide-showcase"><div class="light-screen"><div class="screen-header"><span class="screen-tab">Plan proposal</span><span class="screen-tab">Verified outputs</span><span class="screen-tab">Receipt proof</span></div><div class="mock-dashboard interactive-mock"><div class="mock-panel mock-list"><p class="mock-label">Agent outputs</p><button type="button" class="mock-agent active" data-mock="market"><span class="mock-dot"></span><span><b>Market data</b><small>Funding and positioning</small></span></button><button type="button" class="mock-agent" data-mock="sentiment"><span class="mock-dot"></span><span><b>Sentiment</b><small>News and crowd read</small></span></button><button type="button" class="mock-agent" data-mock="risk"><span class="mock-dot"></span><span><b>Risk verifier</b><small>Output inspection</small></span></button></div><div class="mock-panel mock-output"><p class="mock-label" id="mockOutputLabel">Verified output</p><h3 id="mockOutputTitle">BTC funding is elevated, but not euphoric.</h3><p id="mockOutputBody">The market-data agent found positive funding across major venues, rising open interest, and a clean spot bid. Bind marks the signal as useful but not sufficient without sentiment confirmation.</p><div class="mock-signal-grid" id="mockSignals"><span>Funding +0.018%</span><span>OI +6.2%</span><span>Spot bid intact</span></div></div><div class="mock-panel mock-proof"><p class="mock-label">Receipt</p><div class="mock-receipt"><div><span>Agent</span><b id="mockReceiptAgent">Market data</b></div><div><span>Paid</span><b id="mockReceiptFee">$0.040</b></div><div><span>Tx</span><b id="mockReceiptTx">0x21a...6d3</b></div><div><span>Status</span><b id="mockReceiptStatus">Verified</b></div></div><div class="mock-cta"><span id="mockReceiptAnchor">Anchored on X Layer</span></div></div></div></div></div>
+      <div class="wide-showcase"><div class="light-screen"><div class="screen-header"><span class="screen-tab">Real mission</span><span class="screen-tab">Verified crew</span><span class="screen-tab">On-chain receipt</span><a class="screen-tab" id="showcaseLink" href="/m/1dca02fd-991c-44c0-88c6-717656cfdeca" target="_blank" rel="noopener" style="margin-left:auto">Full receipt →</a></div><div class="mock-dashboard interactive-mock"><div class="mock-panel mock-list"><p class="mock-label">The crew Bind hired</p><div id="realCrew"></div></div><div class="mock-panel mock-output"><p class="mock-label" id="realLabel">Deliverable</p><h3 id="realTitle">Loading a real mission…</h3><p id="realBody"></p><div class="mock-signal-grid" id="realSignals"></div></div><div class="mock-panel mock-proof"><p class="mock-label">Receipt</p><div class="mock-receipt"><div><span>Agent</span><b id="realReceiptAgent">—</b></div><div><span>Verified</span><b id="realReceiptStatus">—</b></div><div><span>Settlement</span><b id="realReceiptTx">—</b></div><div><span>Anchored</span><b id="realReceiptAnchor">—</b></div></div><div class="mock-cta"><span id="realReceiptCta">Every hash is a real transaction on X Layer</span></div></div></div></div></div>
       <div class="quote-grid">
         <div>
           <p class="quote">Most agents on the marketplace do not work. We paid our way across it to find out which ones do.</p>
@@ -1039,46 +1039,43 @@ fetch('/bind/agents').then(r => r.json()).then(j => {
   if (agents && j.leaderboard) agents.textContent = j.leaderboard.filter(a => a.passRate >= 0.34).length;
 }).catch(() => {});
 
-const mockOutputs = {
-  market: {
-    label: 'Verified output',
-    title: 'BTC funding is elevated, but not euphoric.',
-    body: 'The market-data agent found positive funding across major venues, rising open interest, and a clean spot bid. Bind marks the signal as useful but not sufficient without sentiment confirmation.',
-    signals: ['Funding +0.018%', 'OI +6.2%', 'Spot bid intact'],
-    agent: 'Market data', fee: '$0.040', tx: '0x21a...6d3', status: 'Verified', anchor: 'Anchored on X Layer',
-  },
-  sentiment: {
-    label: 'Verified output',
-    title: 'Crowd tone is constructive, with caution around leverage.',
-    body: 'The sentiment agent found improving news tone and higher social attention, but flagged crowded long chatter. Bind keeps the brief balanced instead of blindly bullish.',
-    signals: ['News tone +', 'Social volume +18%', 'Leverage caution'],
-    agent: 'Sentiment', fee: '$0.050', tx: '0x9f4...a81', status: 'Verified', anchor: 'Anchored on X Layer',
-  },
-  risk: {
-    label: 'Inspection result',
-    title: 'The final brief passed format and consistency checks.',
-    body: 'The verifier checked that paid outputs were structured, non-empty, relevant to the goal, and safe to synthesize. Failed or missing outputs would be excluded from the deliverable.',
-    signals: ['Schema passed', 'Relevant output', 'Safe to merge'],
-    agent: 'Risk verifier', fee: '$0.030', tx: '0x7c2...4bf', status: 'Passed', anchor: 'Included in receipt',
-  },
-};
-function selectMockOutput(key) {
-  const data = mockOutputs[key] || mockOutputs.market;
-  document.querySelectorAll('.mock-agent[data-mock]').forEach((btn) => btn.classList.toggle('active', btn.dataset.mock === key));
-  const output = document.querySelector('.mock-output');
-  const proof = document.querySelector('.mock-proof');
-  [output, proof].forEach((el) => { if (el) { el.classList.remove('mock-swap'); void el.offsetWidth; el.classList.add('mock-swap'); } });
-  document.getElementById('mockOutputLabel').textContent = data.label;
-  document.getElementById('mockOutputTitle').textContent = data.title;
-  document.getElementById('mockOutputBody').textContent = data.body;
-  document.getElementById('mockSignals').innerHTML = data.signals.map((s) => `<span>${s}</span>`).join('');
-  document.getElementById('mockReceiptAgent').textContent = data.agent;
-  document.getElementById('mockReceiptFee').textContent = data.fee;
-  document.getElementById('mockReceiptTx').textContent = data.tx;
-  document.getElementById('mockReceiptStatus').textContent = data.status;
-  document.getElementById('mockReceiptAnchor').textContent = data.anchor;
-}
-document.querySelectorAll('.mock-agent[data-mock]').forEach((btn) => btn.addEventListener('click', () => selectMockOutput(btn.dataset.mock)));
+// The showcase is a REAL completed mission pulled from the ledger, not an illustration.
+// Every agent, verdict, settlement tx and anchor below is genuine. If it cannot load,
+// the showcase hides itself rather than display anything fabricated.
+const SHOWCASE_ID = '1dca02fd-991c-44c0-88c6-717656cfdeca';
+const SC_EXPLORER = 'https://www.oklink.com/xlayer/tx/';
+function scShort(h) { return h && h.startsWith('0x') ? h.slice(0, 10) + '…' + h.slice(-6) : '—'; }
+function scEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+fetch('/bind/status/' + SHOWCASE_ID).then((r) => r.json()).then((e) => {
+  if (!e || e.error || !Array.isArray(e.stepResults) || !e.stepResults.length) throw new Error('no showcase');
+  const link = document.getElementById('showcaseLink'); if (link) link.href = '/m/' + e.executionId;
+  const crew = document.getElementById('realCrew');
+  crew.innerHTML = e.stepResults.map((s, i) => {
+    const name = s.serviceName || s.agentName || 'Agent';
+    const ok = s.status === 'passed';
+    return `<button type="button" class="mock-agent${i === 0 ? ' active' : ''}" data-i="${i}"><span class="mock-dot"></span><span><b>${scEsc(name)}</b><small>${ok ? 'verified' : scEsc(s.status)}</small></span></button>`;
+  }).join('');
+  const deliv = e.finalOutput || '';
+  document.getElementById('realTitle').textContent = e.goal;
+  document.getElementById('realBody').textContent = deliv.slice(0, 230) + (deliv.length > 230 ? '…' : '');
+  function pick(i) {
+    const s = e.stepResults[i]; if (!s) return;
+    document.querySelectorAll('#realCrew .mock-agent').forEach((b) => b.classList.toggle('active', b.dataset.i === String(i)));
+    const proof = document.querySelector('.mock-proof');
+    if (proof) { proof.classList.remove('mock-swap'); void proof.offsetWidth; proof.classList.add('mock-swap'); }
+    document.getElementById('realSignals').innerHTML =
+      `<span>${e.completedSteps}/${e.totalSteps} verified</span><span>${scEsc((s.verificationResult && s.verificationResult.detail) || s.status)}</span>`;
+    document.getElementById('realReceiptAgent').textContent = s.serviceName || s.agentName || 'Agent';
+    document.getElementById('realReceiptStatus').textContent = s.status === 'passed' ? 'Passed' : s.status;
+    const tx = s.paymentTxHash;
+    document.getElementById('realReceiptTx').innerHTML = (tx && tx.startsWith('0x'))
+      ? `<a href="${SC_EXPLORER}${tx}" target="_blank" rel="noopener">${scShort(tx)}</a>` : 'no payment';
+    document.getElementById('realReceiptAnchor').innerHTML = (e.anchorTxHash && e.anchorTxHash.startsWith('0x'))
+      ? `<a href="${SC_EXPLORER}${e.anchorTxHash}" target="_blank" rel="noopener">${scShort(e.anchorTxHash)}</a>` : '—';
+  }
+  pick(0);
+  document.querySelectorAll('#realCrew .mock-agent').forEach((b) => b.addEventListener('click', () => pick(Number(b.dataset.i))));
+}).catch(() => { const ws = document.querySelector('.wide-showcase'); if (ws) ws.style.display = 'none'; });
 function initReveals() {
   const targets = document.querySelectorAll('.white-band, .black-band, .wide-showcase, .quote-grid, .deploy-panel, .steps-grid, .dev-grid, .uc-grid, footer.foot');
   targets.forEach((el) => el.classList.add('reveal'));

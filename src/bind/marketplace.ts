@@ -10,8 +10,12 @@ import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const SEARCH_CONCURRENCY = 8;       // parallel marketplace searches
+// The catalog and agent PAYMENTS share one OKX API key. A frequent, 57-query sweep burns
+// that key's rate budget and starves payment signing (which matters far more). Since the
+// committed seed already gives full coverage, refresh live rarely and with few queries —
+// spend the API budget on paying agents, not re-listing them.
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const SEARCH_CONCURRENCY = 3;            // gentle on the shared rate limit
 // Last good catalog, persisted to the volume. If the OKX search API is unreachable at
 // boot (it happens), Bind serves this instead of quoting "no compatible agents" for every
 // goal — a marketplace blip must not zero the product.
@@ -66,14 +70,11 @@ async function ensureLoggedIn(): Promise<boolean> {
 // similarity ranker with no "list all", so we union the top matches across many
 // diverse keywords — this reaches ~107 unique A2MCP agents (effectively the full
 // callable marketplace).
+// A small set of broad queries. The committed seed carries the long tail; this just
+// catches newly-listed agents on a slow cadence, at a fraction of the API cost.
 const QUERIES = [
-  "ai", "crypto", "trading", "market", "data", "security", "audit", "news", "social",
-  "sentiment", "nft", "defi", "yield", "swap", "token", "price", "onchain", "wallet",
-  "analytics", "signal", "research", "meme", "derivatives", "funding", "liquidation",
-  "twitter", "kol", "content", "art", "game", "sports", "prediction", "health", "legal",
-  "credit", "payment", "bridge", "stake", "dex", "rpc", "chart", "alert", "monitor",
-  "scan", "risk", "brief", "quant", "arbitrage", "options", "stocks", "macro", "whale",
-  "airdrop", "launch", "mint", "A2MCP",
+  "crypto", "market", "security", "data", "defi", "token", "onchain",
+  "news", "nft", "prediction", "travel", "content", "A2MCP",
 ];
 
 async function searchOne(query: string): Promise<any[]> {

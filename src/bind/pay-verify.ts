@@ -105,29 +105,31 @@ export async function verifyPayment(txHash: string, minUsdt: number): Promise<Pa
   if (loadUsed().has(h)) return { ok: false, reason: "this payment was already used for another mission" };
   if (inFlight.has(h)) return { ok: false, reason: "this payment is already funding a mission that is running right now" };
 
-  const tx = await rpc("eth_getTransactionByHash", [h]);
-  if (!tx) return { ok: false, reason: "transaction not found on X Layer" };
-  if ((tx.to || "").toLowerCase() !== USDT) return { ok: false, reason: "not a USDT transfer" };
-
-  const input = (tx.input || "").toLowerCase();
-  if (!input.startsWith(ERC20_TRANSFER) || input.length < 138) return { ok: false, reason: "not an ERC-20 transfer" };
-  const to = "0x" + input.slice(34, 74);          // transfer arg1: address (last 20 bytes of the 32-byte word)
-  const amountHex = input.slice(74, 138);          // transfer arg2: uint256 amount
-  if (to.toLowerCase() !== BIND_WALLET) return { ok: false, reason: "payment was not sent to Bind's wallet" };
-
-  let amount: number;
-  try { amount = Number(BigInt("0x" + amountHex)) / 1e6; } catch { return { ok: false, reason: "could not read payment amount" }; }
-  if (amount + 1e-9 < minUsdt) return { ok: false, reason: `underpaid: sent $${amount} but mission costs $${minUsdt}` };
-
   const receipt = await rpc("eth_getTransactionReceipt", [h]);
   if (!receipt) return { ok: false, reason: "payment not yet confirmed — wait a few seconds and retry" };
   if (receipt.status !== "0x1") return { ok: false, reason: "payment transaction failed on-chain" };
 
+  // Verify by the USDT Transfer LOG, not by decoding tx.input. The log is the real proof
+  // that value moved, and it is correct for EVERY payment method: a direct EOA transfer, a
+  // relayed/sponsored tx, or an account-abstraction (smart-wallet) tx where tx.to is an
+  // entrypoint, not the token. Decoding tx.input only worked for direct EOA transfers and
+  // rejected every smart-wallet buyer as "not a USDT transfer".
+  let total = 0n;
+  let payer: string | undefined;
+  for (const log of receipt.logs ?? []) {
+    if (String(log.address).toLowerCase() !== USDT) continue;
+    const topics: string[] = log.topics ?? [];
+    if (topics[0]?.toLowerCase() !== TRANSFER_TOPIC || topics.length < 3) continue;
+    if (topicToAddress(topics[2]).toLowerCase() !== BIND_WALLET) continue; // credited to us
+    try { total += BigInt(log.data); } catch { /* skip unreadable log */ }
+    payer = topicToAddress(topics[1]);
+  }
+  if (total === 0n) return { ok: false, reason: "no USDT transfer to Bind's wallet in this transaction" };
+  const amount = Number(total) / 1e6;
+  if (amount + 1e-9 < minUsdt) return { ok: false, reason: `underpaid: sent $${amount} but mission costs $${minUsdt}` };
+
   // Claim (don't burn) the payment. The route commits it only after the mission runs,
   // so a pre-execution failure leaves the buyer free to retry with the same tx.
   inFlight.add(h);
-  // tx.from is the account that submitted; for a relayed/sponsored payment that can be a
-  // relayer, so prefer the ERC-20 Transfer log's `from` topic (the real payer).
-  const payer = payerFromReceipt(receipt) ?? (tx.from as string | undefined);
   return { ok: true, amount, payer };
 }

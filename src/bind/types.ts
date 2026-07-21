@@ -58,6 +58,8 @@ export interface BindPlan {
   estimatedTime: string;
   createdAt: string;
   note?: string;
+  /** True for the built-in dependency-graph flagship (step 2 consumes step 1's output). */
+  flagship?: boolean;
 }
 
 export interface ExecutionResult {

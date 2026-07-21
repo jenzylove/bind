@@ -8,6 +8,7 @@ import type { BindAgent, BindPlan, BindStep, PlanRequest } from "./types.js";
 import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceService } from "./marketplace.js";
 import { selectAgents, type SelectCandidate } from "./select.js";
 import { repSummary, isProvenBad } from "./reputation.js";
+import { isFlagshipGoal, buildFlagshipPlan } from "./flagship.js";
 
 // Guardrails so an auto-plan is never surprising or nonsensical.
 const PER_STEP_FEE_CEILING = 0.60;   // ceiling for tested-payable agents
@@ -115,6 +116,10 @@ function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
 }
 
 export async function createPlan(req: PlanRequest): Promise<BindPlan> {
+  // Token-vetting goals that name a contract address run the real dependency graph:
+  // resolve the token (gate) -> holders + sentiment keyed on the resolved symbol.
+  if (isFlagshipGoal(req.goal)) return buildFlagshipPlan(req.goal);
+
   const analytical = goalIsAnalytical(req.goal);
   const scored = await findMatchingAgentsScored(req.goal);
 

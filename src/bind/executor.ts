@@ -190,13 +190,17 @@ function fillBoundParams(tpl: Record<string, string>, goal: string): Record<stri
   return body;
 }
 
-// Resolve one dotted reference ("nodeId.data.0.symbol") against a node's stored output.
+// Resolve one dotted reference ("nodeId.data.symbol") against a node's stored output.
+// Transparently unwraps JSON-string layers: several OKX endpoints return {code,msg,data}
+// where `data` is itself a JSON STRING, so "data.symbol" must parse `data` before indexing.
 function resolveRef(root: unknown, path: string[]): unknown {
   let cur: unknown = root;
   for (const seg of path) {
     if (cur == null) return undefined;
+    if (typeof cur === "string") { try { cur = JSON.parse(cur); } catch { return undefined; } }
     cur = (cur as Record<string, unknown>)[seg];
   }
+  if (typeof cur === "string" && (cur[0] === "{" || cur[0] === "[")) { try { return JSON.parse(cur); } catch { /* leave as string */ } }
   return cur;
 }
 

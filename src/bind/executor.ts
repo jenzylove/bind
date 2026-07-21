@@ -77,13 +77,28 @@ async function walletLogin(): Promise<void> {
   try { await execFileAsync(ONCHAINOS_PATH, ["wallet", "login"], { timeout: 20000 }); } catch { /* ignore */ }
 }
 
+// Sign an x402 payment authorization. `payment pay` routes through the OKX backend, which
+// the server can intermittently fail to reach (datacenter-IP rate limiting) or against
+// which the session can expire — so retry, re-authenticating once before a fresh attempt.
+// A single blip here used to fail the whole agent call (and, in the flagship, block the
+// entire downstream chain).
 async function signPayment(challengeB64: string): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync(ONCHAINOS_PATH, ["payment", "pay", "--payload", challengeB64], { timeout: 30000 });
-    return JSON.parse(stdout).data?.authorization_header ?? null;
-  } catch {
-    return null;
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const { stdout } = await execFileAsync(ONCHAINOS_PATH, ["payment", "pay", "--payload", challengeB64], { timeout: 30000 });
+      const auth = JSON.parse(stdout).data?.authorization_header;
+      if (auth) return auth;
+      lastErr = "no authorization_header in response";
+    } catch (e) {
+      lastErr = (e as Error).message.slice(0, 120);
+    }
+    // Re-authenticate before retrying: an expired TEE session is the most common cause.
+    try { await execFileAsync(ONCHAINOS_PATH, ["wallet", "login"], { timeout: 15000 }); } catch { /* ignore */ }
+    await new Promise((r) => setTimeout(r, 900));
   }
+  console.warn(`[bind] payment signing failed after retries: ${lastErr}`);
+  return null;
 }
 
 

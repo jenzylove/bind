@@ -5,7 +5,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
@@ -15,6 +16,13 @@ const SEARCH_CONCURRENCY = 8;       // parallel marketplace searches
 // boot (it happens), Bind serves this instead of quoting "no compatible agents" for every
 // goal — a marketplace blip must not zero the product.
 const CATALOG_FILE = join(process.env.BIND_DATA_DIR ?? "data", "catalog-cache.json");
+// A real catalog snapshot committed to the repo. It is the floor: even if the volume is
+// empty AND the OKX search API is unreachable from the server, Bind still has ~200 real
+// agents to route to. Refreshed live in the background whenever the sweep succeeds.
+const SEED_CANDIDATES = [
+  join(process.cwd(), "catalog-seed.json"),
+  join(dirname(fileURLToPath(import.meta.url)), "..", "..", "catalog-seed.json"),
+];
 
 interface CachedCatalog {
   timestamp: number;
@@ -143,6 +151,20 @@ function loadPersistedCatalog(): void {
   } catch { /* no persisted catalog yet */ }
 }
 
+function loadSeedCatalog(): void {
+  if (catalogCache) return; // volume cache or a live sweep already won
+  for (const p of SEED_CANDIDATES) {
+    try {
+      const agents = JSON.parse(readFileSync(p, "utf8")) as MarketplaceAgent[];
+      if (Array.isArray(agents) && agents.length > 0) {
+        catalogCache = { timestamp: 0, agents }; // stale, so a live refresh still runs
+        console.log(`[bind] catalog seeded from repo: ${agents.length} agents (refreshing live)`);
+        return;
+      }
+    } catch { /* try next candidate */ }
+  }
+}
+
 function persistCatalog(agents: MarketplaceAgent[]): void {
   try {
     mkdirSync(process.env.BIND_DATA_DIR ?? "data", { recursive: true });
@@ -169,7 +191,8 @@ function startRefresh(): Promise<MarketplaceAgent[]> {
 // Stale-while-revalidate: a warm cache answers instantly; an expired one is still served
 // immediately while a refresh runs in the background. Only a completely cold start waits.
 async function getCatalog(): Promise<MarketplaceAgent[]> {
-  loadPersistedCatalog();
+  loadPersistedCatalog();  // volume: last good live sweep
+  loadSeedCatalog();       // repo floor: ~200 real agents, always available
   const now = Date.now();
   if (catalogCache && now - catalogCache.timestamp < CACHE_TTL_MS) return catalogCache.agents;
   if (catalogCache) { void startRefresh(); return catalogCache.agents; }

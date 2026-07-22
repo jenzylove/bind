@@ -127,11 +127,13 @@ export async function settleIncomingPayment(rawHeader: string, amountBaseUnits: 
 
   const found = findAuthorization(decoded);
   if (!found) {
-    // Structured JSON but no EIP-3009 authorization we recognize — likely an OKX TEE /
-    // deferred credential. Serve it (interop over revenue) but keep the evidence.
-    settlementLog({ kind: "passthrough_unrecognized", keys: Object.keys(decoded), scheme: decoded.scheme ?? null });
-    console.warn("[x402-settle] unrecognized credential format — served without settlement");
-    return { ok: true, settled: false, reason: "unrecognized credential format (passthrough)" };
+    // FAIL CLOSED. A structured JSON blob without a verifiable EIP-3009 authorization is
+    // not proof of payment — the old passthrough here served paid routes for free to any
+    // `{"foo":"bar"}` (audit C1). Returning ok:false makes the gate answer 402, which is
+    // also the correct x402 response for an unverifiable/unsupported credential.
+    settlementLog({ kind: "rejected_unrecognized", keys: Object.keys(decoded), scheme: decoded.scheme ?? null });
+    console.warn("[x402-settle] unrecognized/unverifiable credential — rejected (402)");
+    return { ok: false, settled: false, reason: "unsupported or unverifiable payment credential (no settlement adapter)" };
   }
 
   const { auth, signature } = found;

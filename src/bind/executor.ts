@@ -262,15 +262,19 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   // small tolerance) or the absolute per-call ceiling. This is the fix for the real leak
   // where an agent listed at ~$0.11 demanded $3 in its live challenge.
   const cost = readChallengeCost(challengeB64);
-  if (cost) {
-    const quoted = step.agent.feeAmount || 0;
-    const allowed = Math.max(quoted * 1.5, 0.002); // tolerance for unit rounding on sub-cent quotes
-    if (cost.usdt > allowed || cost.usdt > MAX_ABS_PER_CALL_USDT) {
-      return { output: null, paid: false, error: `overcharge blocked: agent demands $${cost.usdt} (quoted $${quoted}, cap $${Math.min(allowed, MAX_ABS_PER_CALL_USDT)})`, input: body };
-    }
-    if (cost.asset && cost.asset !== USDT_ASSET_LC) {
-      return { output: null, paid: false, error: `payment asset mismatch: challenge wants ${cost.asset}, not USDT`, input: body };
-    }
+  // FAIL CLOSED on an unreadable challenge (audit H2): if we cannot parse the amount/asset
+  // the seller is demanding, we must not sign it blind — the local signer's understanding
+  // and the OKX signer's could differ, and an unknown amount could drain the wallet.
+  if (!cost) {
+    return { output: null, paid: false, error: "challenge could not be decoded — refusing to sign an unknown payment amount", input: body };
+  }
+  const quoted = step.agent.feeAmount || 0;
+  const allowed = Math.max(quoted * 1.5, 0.002); // tolerance for unit rounding on sub-cent quotes
+  if (cost.usdt > allowed || cost.usdt > MAX_ABS_PER_CALL_USDT) {
+    return { output: null, paid: false, error: `overcharge blocked: agent demands $${cost.usdt} (quoted $${quoted}, cap $${Math.min(allowed, MAX_ABS_PER_CALL_USDT)})`, input: body };
+  }
+  if (cost.asset && cost.asset !== USDT_ASSET_LC) {
+    return { output: null, paid: false, error: `payment asset mismatch: challenge wants ${cost.asset}, not USDT`, input: body };
   }
 
   const auth = await signPayment(challengeB64);
@@ -399,7 +403,11 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
       } else {
         result.output = call.output;
         if (call.paid) {
-          result.paymentTxHash = call.txHash ?? "settled";
+          // Only claim a verified settlement when we actually have the tx hash from the
+          // agent's payment-response. Without it the money most likely moved (the agent
+          // served paid data), but we must not present an unproven hash as "settled"
+          // (audit C3) — label it honestly so receipts and reputation don't overstate.
+          result.paymentTxHash = call.txHash ?? "settlement_unconfirmed";
           result.feeUsdt = agent.feeAmount;
           totalPaid += agent.feeAmount;
         } else {

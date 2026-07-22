@@ -233,8 +233,28 @@ function resolveInputMap(map: Record<string, string>, nodeOutputs: Map<string, u
   return { params, unresolved };
 }
 
+// SSRF guard (audit H7): marketplace endpoints are seller-controlled. Only call public
+// HTTPS URLs — never http, never localhost, private, link-local, or cloud-metadata hosts.
+function isSafeEndpoint(url: string): boolean {
+  let u: URL;
+  try { u = new URL(url); } catch { return false; }
+  if (u.protocol !== "https:") return false;
+  const h = u.hostname.toLowerCase();
+  if (h === "localhost" || h === "0.0.0.0" || h === "::1" || h.endsWith(".localhost") || h.endsWith(".internal")) return false;
+  // Block IP-literal hosts in private / loopback / link-local / metadata ranges.
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 127 || a === 10 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254)) return false;
+  }
+  return true;
+}
+
 async function callAgent(step: BindStep, goal: string, injected?: Record<string, unknown>): Promise<CallResult> {
   const endpoint = step.agent.endpoint;
+  if (!isSafeEndpoint(endpoint)) {
+    return { output: null, paid: false, error: `unsafe agent endpoint refused: ${endpoint.slice(0, 60)}`, input: {} };
+  }
   // Prefer the exact, tested params for this agent; then the proven hardcoded map; then infer.
   let { body, method } = step.boundParams
     ? { body: fillBoundParams(step.boundParams, goal), method: "POST" as const }

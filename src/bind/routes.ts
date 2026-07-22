@@ -18,6 +18,9 @@ import { config } from "../config.js";
 // which the server verifies. This is what makes Bind a real economic loop and stops the
 // agentic wallet from being drained by anonymous free calls.
 const ALLOW_FREE = process.env.BIND_ALLOW_FREE === "1";
+// A quote is only executable for a short window — after that, marketplace prices and agent
+// availability may have moved, so the buyer must re-plan (audit H6).
+const QUOTE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export const bindRouter = Router();
 
@@ -139,6 +142,16 @@ const executeHandler = async (req: any, res: any) => {
     }
     if (!plan) {
       res.status(400).json({ error: "bad_request", message: "Provide a 'goal' to run a mission in one call, or a 'planId' from a previous /bind/plan call." });
+      return;
+    }
+
+    // Quote expiry (audit H6): a saved plan quotes marketplace prices/endpoints that go
+    // stale. Reject execution of an old quote so a buyer can't pay against prices that no
+    // longer hold — they must re-plan. (Single-call goal plans are made fresh above, so
+    // this only rejects a genuinely stale planId.)
+    const ageMs = Date.now() - new Date(plan.createdAt).getTime();
+    if (Number.isFinite(ageMs) && ageMs > QUOTE_TTL_MS) {
+      res.status(409).json({ error: "quote_expired", message: "This quote has expired. Request a fresh plan before paying — prices and available agents may have changed. You were not charged." });
       return;
     }
 

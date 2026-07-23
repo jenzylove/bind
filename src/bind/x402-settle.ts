@@ -49,7 +49,7 @@ export interface Eip3009Auth {
  * authorization simply fails. Returns the settlement tx hash, or null.
  */
 export async function settleAuthorization(auth: Eip3009Auth, signature: string): Promise<string | null> {
-  return submitTransferWithAuthorization(auth, signature);
+  return (await submitTransferWithAuthorization(auth, signature)).txHash ?? null;
 }
 
 function word(hex: string): string { return hex.toLowerCase().replace(/^0x/, "").padStart(64, "0"); }
@@ -83,7 +83,7 @@ function settlementLog(entry: Record<string, unknown>): void {
   } catch { /* audit log is best-effort */ }
 }
 
-async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: string): Promise<string | null> {
+async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: string): Promise<{ txHash?: string; reason?: string }> {
   const sig = signature.toLowerCase().replace(/^0x/, "");
   const common =
     word(auth.from) + word(auth.to) + numWord(auth.value) +
@@ -99,6 +99,11 @@ async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: str
   const sigPadded = sig.padEnd(Math.ceil(sig.length / 64) * 64, "0");
   attempts.push(SEL_BYTES + common + numWord(0x120) + numWord(sig.length / 2) + sigPadded);
 
+  // Capture the REAL reason each overload fails — the CLI's error string (revert reason,
+  // out-of-gas, HPKE, invalid signature) — instead of swallowing it. Without this we could
+  // only report a generic "settlement failed" and were flying blind (this is what OKX's
+  // review flagged: inspect settler logs).
+  let lastReason = "no settlement attempt ran";
   for (const data of attempts) {
     try {
       const { stdout } = await execFileAsync(
@@ -108,10 +113,14 @@ async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: str
       );
       const parsed = JSON.parse(stdout);
       const txHash = parsed?.data?.txHash ?? parsed?.data?.hash ?? parsed?.data?.orderId;
-      if (typeof txHash === "string" && txHash.length > 0) return txHash;
-    } catch { /* try the other overload */ }
+      if (typeof txHash === "string" && txHash.length > 0) return { txHash };
+      // ok:false or no hash — keep the CLI's own error/simulation message.
+      lastReason = parsed?.error || parsed?.data?.executeErrorMsg || parsed?.msg || JSON.stringify(parsed).slice(0, 160);
+    } catch (e) {
+      lastReason = (e as Error).message.slice(0, 160);
+    }
   }
-  return null;
+  return { reason: lastReason };
 }
 
 /**
@@ -154,10 +163,12 @@ export async function settleIncomingPayment(rawHeader: string, amountBaseUnits: 
 
   // The token contract enforces the signature and the nonce (replay protection) —
   // a bad credential reverts and we never serve it.
-  const txHash = await submitTransferWithAuthorization(auth, signature);
+  const { txHash, reason } = await submitTransferWithAuthorization(auth, signature);
   if (!txHash) {
-    settlementLog({ kind: "settle_failed", payer: auth.from, value: String(value) });
-    return { ok: false, settled: false, reason: "settlement transaction failed (invalid or replayed authorization)" };
+    settlementLog({ kind: "settle_failed", payer: auth.from, value: String(value), reason });
+    console.warn(`[x402-settle] settlement did not land: ${reason}`);
+    // Surface the actual on-chain reason instead of falsely blaming a "replayed" nonce.
+    return { ok: false, settled: false, reason: `settlement did not confirm on X Layer: ${reason ?? "unknown"}` };
   }
 
   settlementLog({ kind: "settled", payer: auth.from, value: String(value), txHash });

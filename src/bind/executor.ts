@@ -91,7 +91,10 @@ async function signPayment(challengeB64: string): Promise<string | null> {
       if (auth) return auth;
       lastErr = "no authorization_header in response";
     } catch (e) {
-      lastErr = (e as Error).message.slice(0, 120);
+      // onchainos prints its real error (HPKE, revert, etc.) to stdout even on a non-zero
+      // exit — capture that, not just the generic "Command failed" message.
+      const err = e as { stdout?: string; stderr?: string; message?: string };
+      lastErr = String(err.stdout || err.stderr || err.message || "").replace(/\s+/g, " ").slice(0, 220);
     }
     // Re-authenticate before retrying: an expired TEE session is the most common cause.
     try { await execFileAsync(ONCHAINOS_PATH, ["wallet", "login"], { timeout: 15000 }); } catch { /* ignore */ }

@@ -92,12 +92,17 @@ async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: str
   const attempts: string[] = [];
   if (sig.length === 130) {
     // v,r,s overload first — cheapest calldata, most widely implemented.
-    const r = sig.slice(0, 64), s = sig.slice(64, 128), v = BigInt("0x" + sig.slice(128, 130));
+    const r = sig.slice(0, 64), s = sig.slice(64, 128);
+    let v = BigInt("0x" + sig.slice(128, 130));
+    if (v < 27n) v += 27n; // some signers return 0/1; the token's ecrecover expects 27/28
     attempts.push(SEL_VRS + common + numWord(v) + r + s);
   }
-  // bytes-signature overload: offset (0x120 = 9 words in), length, padded bytes.
+  // bytes-signature overload. The `bytes signature` is the 7th argument, so its data
+  // begins right after the 7-word head (6 fixed args + the offset pointer) = 0xE0.
+  // (This was 0x120 — 2 words too far — which made the calldata malformed and every
+  // settlement revert. This is the exact bug OKX's review flagged.)
   const sigPadded = sig.padEnd(Math.ceil(sig.length / 64) * 64, "0");
-  attempts.push(SEL_BYTES + common + numWord(0x120) + numWord(sig.length / 2) + sigPadded);
+  attempts.push(SEL_BYTES + common + numWord(0xe0) + numWord(sig.length / 2) + sigPadded);
 
   // Capture the REAL reason each overload fails — the CLI's error string (revert reason,
   // out-of-gas, HPKE, invalid signature) — instead of swallowing it. Without this we could

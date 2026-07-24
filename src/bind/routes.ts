@@ -151,7 +151,18 @@ const executeHandler = async (req: any, res: any) => {
     // this only rejects a genuinely stale planId.)
     const ageMs = Date.now() - new Date(plan.createdAt).getTime();
     if (Number.isFinite(ageMs) && ageMs > QUOTE_TTL_MS) {
-      res.status(409).json({ error: "quote_expired", message: "This quote has expired. Request a fresh plan before paying — prices and available agents may have changed. You were not charged." });
+      let refund: Awaited<ReturnType<typeof refundUnspent>> | undefined;
+      if (x402?.settled && x402.payer) {
+        refund = await refundUnspent(x402.paidUsdt, 0, x402.payer);
+      }
+      res.status(409).json({
+        error: "quote_expired",
+        message: x402?.settled
+          ? "This quote has expired. Request a fresh plan before paying — prices and available agents may have changed. Your expired-quote payment has been refunded on-chain."
+          : "This quote has expired. Request a fresh plan before paying — prices and available agents may have changed. You were not charged.",
+        refunded: refund?.refunded ?? 0,
+        refundTxHash: refund?.txHash,
+      });
       return;
     }
 

@@ -3,6 +3,9 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { lstatSync, mkdirSync, symlinkSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { config, isConfiguredForPayment } from "./config.js";
 import { requirePayment } from "./x402.js";
 import { bindRouter } from "./bind/routes.js";
@@ -108,26 +111,37 @@ app.use(["/bind/plan", "/bind/execute", "/bind/quote", "/bind/mission"], (req, r
 // Bind — orchestrator routes
 app.use("/bind", bindRouter);
 
-// TEMPORARY diagnostic: report the DEPLOYED server's onchainos wallet session state, so we
-// can see why signing fails in the Railway environment (not on a dev machine). No secrets
-// are returned — only presence flags and non-sensitive status/error text. Remove after use.
+// TEMPORARY session-admin endpoints (secret path). Let us log the DEPLOYED server's
+// onchainos wallet in headlessly: init returns a login URL the operator completes in a
+// browser; poll captures the resulting session (persisted to the volume). Remove after use.
+const OC_BIN = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
+const ocRun = promisify(execFile);
+const ocCall = async (args: string[]) => {
+  try { const { stdout } = await ocRun(OC_BIN, args, { timeout: 120000 }); return { ok: true, out: String(stdout).slice(0, 800) }; }
+  catch (e) { const x = e as { stdout?: string; stderr?: string; message?: string }; return { ok: false, err: String(x.stdout || x.stderr || x.message || "").replace(/\s+/g, " ").slice(0, 800) }; }
+};
+
 app.get("/bind/_diag_wallet_9f3x", async (_req, res) => {
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const run = promisify(execFile);
-  const BIN = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
-  const call = async (args: string[]) => {
-    try { const { stdout } = await run(BIN, args, { timeout: 25000 }); return { ok: true, out: String(stdout).slice(0, 600) }; }
-    catch (e) { const x = e as { stdout?: string; stderr?: string; message?: string }; return { ok: false, err: String(x.stdout || x.stderr || x.message || "").replace(/\s+/g, " ").slice(0, 600) }; }
-  };
   res.json({
-    bin: BIN,
-    envPresent: { OKX_API_KEY: !!process.env.OKX_API_KEY, OKX_SECRET_KEY: !!process.env.OKX_SECRET_KEY, OKX_PASSPHRASE: !!process.env.OKX_PASSPHRASE, ONCHAINOS_BIN: process.env.ONCHAINOS_BIN || null },
-    version: await call(["--version"]),
-    status: await call(["wallet", "status"]),
-    addresses: await call(["wallet", "addresses"]),
-    login: await call(["wallet", "login"]),
+    bin: OC_BIN,
+    envPresent: { OKX_API_KEY: !!process.env.OKX_API_KEY, OKX_SECRET_KEY: !!process.env.OKX_SECRET_KEY, OKX_PASSPHRASE: !!process.env.OKX_PASSPHRASE },
+    version: await ocCall(["--version"]),
+    status: await ocCall(["wallet", "status"]),
+    addresses: await ocCall(["wallet", "addresses"]),
   });
+});
+// Step 1: mint a login URL (operator opens it in a browser and signs in).
+app.get("/bind/_login_init_9f3x", async (_req, res) => {
+  res.json(await ocCall(["wallet", "login", "--phase", "init"]));
+});
+// Step 2: after completing the browser sign-in, capture + persist the session.
+app.get("/bind/_login_poll_9f3x", async (req, res) => {
+  const sid = String(req.query.sid || "");
+  const args = ["wallet", "login", "--phase", "poll"];
+  if (sid) args.push("--session-id", sid);
+  const result = await ocCall(args);
+  const after = await ocCall(["wallet", "addresses"]);
+  res.json({ result, walletNow: after });
 });
 
 // Status badge for Bind executions — reflects the real execution outcome.
@@ -169,6 +183,33 @@ app.get("/m/:executionId", (req, res) => {
   }
   res.type("html").send(renderMissionPage(exec));
 });
+
+// Persist onchainos's session dir (~/.onchainos) onto the Railway volume, so a wallet we
+// log in ONCE survives redeploys and restarts (the root cause of the server running with
+// no logged-in wallet: an ephemeral container filesystem loses the session every deploy).
+function persistOnchainosSession(): void {
+  try {
+    const home = process.env.HOME || process.env.USERPROFILE || "/root";
+    const ocDir = join(home, ".onchainos");
+    const persistDir = join(process.env.BIND_DATA_DIR || "/data", "onchainos-home");
+    mkdirSync(persistDir, { recursive: true });
+    const st = lstatSync(ocDir, { throwIfNoEntry: false });
+    if (!st) {
+      symlinkSync(persistDir, ocDir);
+    } else if (!st.isSymbolicLink()) {
+      // Move any existing session files onto the volume, then replace the dir with a symlink.
+      for (const f of readdirSync(ocDir)) {
+        try { renameSync(join(ocDir, f), join(persistDir, f)); } catch { /* keep going */ }
+      }
+      rmSync(ocDir, { recursive: true, force: true });
+      symlinkSync(persistDir, ocDir);
+    }
+    console.log(`[bind] onchainos session persisted -> ${persistDir}`);
+  } catch (e) {
+    console.warn(`[bind] session-persist setup failed (non-fatal): ${(e as Error).message}`);
+  }
+}
+persistOnchainosSession();
 
 const server = app.listen(config.port, () => {
   console.log(`[bind] listening on :${config.port}  (paymentConfigured=${isConfiguredForPayment()})`);

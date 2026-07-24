@@ -109,6 +109,7 @@ async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: str
   // only report a generic "settlement failed" and were flying blind (this is what OKX's
   // review flagged: inspect settler logs).
   let lastReason = "no settlement attempt ran";
+  let refreshedWalletSession = false;
   for (const data of attempts) {
     try {
       const { stdout } = await execFileAsync(
@@ -123,6 +124,28 @@ async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: str
       lastReason = parsed?.error || parsed?.data?.executeErrorMsg || parsed?.msg || JSON.stringify(parsed).slice(0, 160);
     } catch (e) {
       lastReason = (e as Error).message.slice(0, 160);
+      if (!refreshedWalletSession && /HPKE decryption failed/i.test(lastReason)) {
+        refreshedWalletSession = true;
+        settlementLog({ kind: "wallet_session_refresh", reason: lastReason });
+        try {
+          await execFileAsync(ONCHAINOS_PATH, ["wallet", "logout"], { timeout: 15000 });
+        } catch (logoutErr) {
+          settlementLog({ kind: "wallet_session_refresh_failed", reason: (logoutErr as Error).message.slice(0, 160) });
+        }
+        try {
+          const { stdout } = await execFileAsync(
+            ONCHAINOS_PATH,
+            ["wallet", "contract-call", "--to", config.usdtAsset, "--chain", "196", "--input-data", data],
+            { timeout: 45000 },
+          );
+          const parsed = JSON.parse(stdout);
+          const txHash = parsed?.data?.txHash ?? parsed?.data?.hash ?? parsed?.data?.orderId;
+          if (typeof txHash === "string" && txHash.length > 0) return { txHash };
+          lastReason = parsed?.error || parsed?.data?.executeErrorMsg || parsed?.msg || JSON.stringify(parsed).slice(0, 160);
+        } catch (retryErr) {
+          lastReason = (retryErr as Error).message.slice(0, 160);
+        }
+      }
     }
   }
   return { reason: lastReason };

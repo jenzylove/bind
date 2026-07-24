@@ -153,15 +153,23 @@ function loadPersistedCatalog(): void {
 }
 
 function loadSeedCatalog(): void {
-  if (catalogCache) return; // volume cache or a live sweep already won
   for (const p of SEED_CANDIDATES) {
     try {
       const agents = JSON.parse(readFileSync(p, "utf8")) as MarketplaceAgent[];
-      if (Array.isArray(agents) && agents.length > 0) {
+      if (!Array.isArray(agents) || agents.length === 0) continue;
+
+      if (catalogCache) {
+        const byId = new Map(catalogCache.agents.map((agent) => [agent.agentId, agent]));
+        for (const agent of agents) if (!byId.has(agent.agentId)) byId.set(agent.agentId, agent);
+        if (byId.size > catalogCache.agents.length) {
+          catalogCache = { timestamp: 0, agents: [...byId.values()] };
+          console.log(`[bind] catalog seed merged from repo: ${catalogCache.agents.length} agents (refreshing live)`);
+        }
+      } else {
         catalogCache = { timestamp: 0, agents }; // stale, so a live refresh still runs
         console.log(`[bind] catalog seeded from repo: ${agents.length} agents (refreshing live)`);
-        return;
       }
+      return;
     } catch { /* try next candidate */ }
   }
 }
@@ -220,7 +228,10 @@ export async function warmCatalog(): Promise<number> {
 
 function scoreAgentRelevance(agent: MarketplaceAgent, goal: string): number {
   const goalLower = goal.toLowerCase();
-  const nameAndDesc = `${agent.name} ${agent.description}`.toLowerCase();
+  const serviceText = agent.services
+    .map((svc) => `${svc.serviceName} ${svc.description ?? ""} ${svc.endpoint}`)
+    .join(" ");
+  const nameAndDesc = `${agent.name} ${agent.description} ${serviceText}`.toLowerCase();
   let score = 0;
 
   const goalWords = goalLower.split(/\s+/);
@@ -258,6 +269,15 @@ function scoreAgentRelevance(agent: MarketplaceAgent, goal: string): number {
   // goal (e.g. a WORLD_CUP agent for a World Cup goal, an ART_CREATION agent for a logo).
   const catWords = (agent.category || "").toLowerCase().replace(/_/g, " ").split(" ");
   for (const w of catWords) if (w.length > 3 && goalLower.includes(w)) score += 8;
+
+  if (/(?:\$[A-Za-z][A-Za-z0-9]{1,11}\b|\b[A-Z0-9]{2,12}\b)/.test(goal)) {
+    for (const signal of ["token", "symbol", "asset", "price", "market", "chart", "technical", "sentiment", "news", "kol", "alpha", "funding", "hyperliquid"]) {
+      if (nameAndDesc.includes(signal)) score += 6;
+    }
+    for (const generic of ["defi macro", "macro overview", "valuation multiples", "supported chains", "yield", "top pools", "bridge", "swap"]) {
+      if (nameAndDesc.includes(generic)) score -= 8;
+    }
+  }
 
   // Reputation bonus
   score += Math.min(agent.rating / 10, 5);

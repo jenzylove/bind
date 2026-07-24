@@ -62,10 +62,58 @@ function isActionAgent(agent: MarketplaceAgent): boolean {
 function cheapestService(agent: MarketplaceAgent): MarketplaceService {
   return agent.services.reduce((a, b) => (a.feeAmount <= b.feeAmount ? a : b));
 }
+function goalHasSpecificToken(goal: string): boolean {
+  return /(?:\$[A-Za-z][A-Za-z0-9]{1,11}\b|\b[A-Z0-9]{2,12}\b)/.test(goal);
+}
+function serviceSupportsSpecificToken(service: MarketplaceService): boolean {
+  const text = `${service.serviceName} ${service.description ?? ""}`.toLowerCase();
+  return /(?:token symbol|symbol or contract|token contract|contract address|market symbol|any token|single token|asset as|chain and asset|optional token|optional topic)/.test(text);
+}
+function serviceRelevanceScore(service: MarketplaceService, goal: string): number {
+  const goalLower = goal.toLowerCase();
+  const text = `${service.serviceName} ${service.description ?? ""} ${service.endpoint}`.toLowerCase();
+  let score = 0;
+
+  for (const word of goalLower.split(/[^a-z0-9$]+/)) {
+    const normalized = word.replace(/^\$/, "");
+    if (normalized.length > 2 && text.includes(normalized)) score += 4;
+  }
+
+  if (goalHasSpecificToken(goal)) {
+    for (const signal of [
+      "token", "symbol", "asset", "price", "market", "chart", "technical",
+      "sentiment", "social", "news", "kol", "alpha", "funding", "hyperliquid",
+      "contract", "futures",
+    ]) {
+      if (text.includes(signal)) score += 8;
+    }
+    for (const generic of [
+      "defi macro", "macro overview", "valuation multiples", "supported chains",
+      "yield", "top pools", "bridge", "swap", "portfolio",
+    ]) {
+      if (text.includes(generic)) score -= 10;
+    }
+  }
+
+  return score;
+}
 // The service Bind will actually call. For a tested-payable agent we pin the exact
-// endpoint the settlement test confirmed works (often NOT the cheapest — a cheaper sibling
-// service is frequently a dead 404). Everyone else falls back to the cheapest service.
-function chosenService(agent: MarketplaceAgent): MarketplaceService {
+// endpoint the settlement test confirmed works, unless the goal clearly matches a
+// different service on the same agent. This prevents token briefs from routing to a
+// generic sibling service just because it was the last probed endpoint.
+function chosenService(agent: MarketplaceAgent, goal?: string): MarketplaceService {
+  if (goal && agent.services.length > 1) {
+    const services = goalHasSpecificToken(goal)
+      ? agent.services.filter(serviceSupportsSpecificToken)
+      : agent.services;
+    if (services.length > 0) {
+      const best = services.reduce((a, b) =>
+        serviceRelevanceScore(a, goal) >= serviceRelevanceScore(b, goal) ? a : b
+      );
+      if (serviceRelevanceScore(best, goal) >= 16) return best;
+    }
+  }
+
   const o = PAYABLE_ENDPOINTS.get(agent.agentId);
   if (o) {
     const live = agent.services.find((s) => s.endpoint === o.endpoint);
@@ -76,7 +124,8 @@ function chosenService(agent: MarketplaceAgent): MarketplaceService {
 }
 
 function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
-  const desc = `${agent.name} ${agent.description} ${agent.category}`.toLowerCase();
+  const svc = chosenService(agent, goal);
+  const desc = `${agent.name} ${agent.description} ${agent.category} ${svc.serviceName} ${svc.description ?? ""}`.toLowerCase();
   const goalLower = goal.toLowerCase();
 
   // Non-crypto domains first, so a football or travel agent isn't misfiled as "market_data"
@@ -93,13 +142,20 @@ function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
   if (/health|diet|fitness|nutrition|calorie|workout|wellness|medical/.test(desc)) {
     return "health";
   }
+  const safetyGoal = /\b(safe|safety|risk|audit|verify|scan|honeypot|rug|security)\b/.test(goalLower);
+  if (!safetyGoal && (desc.includes("sentiment") || desc.includes("social") || desc.includes("news") || desc.includes("twitter") || desc.includes("kol"))) {
+    return "sentiment";
+  }
+  if (!safetyGoal && (desc.includes("market") || desc.includes("data") || desc.includes("price") || desc.includes("trading") || desc.includes("derivatives") || desc.includes("technical") || desc.includes("tape") || desc.includes("flow") || desc.includes("whale"))) {
+    return "market_data";
+  }
   if (desc.includes("security") || desc.includes("scan") || desc.includes("risk") || desc.includes("audit") || desc.includes("verify")) {
     return "security";
   }
   if (desc.includes("sentiment") || desc.includes("social") || desc.includes("news") || desc.includes("twitter") || desc.includes("kol")) {
     return "sentiment";
   }
-  if (desc.includes("market") || desc.includes("data") || desc.includes("price") || desc.includes("trading") || desc.includes("derivatives")) {
+  if (desc.includes("market") || desc.includes("data") || desc.includes("price") || desc.includes("trading") || desc.includes("derivatives") || desc.includes("technical") || desc.includes("tape") || desc.includes("flow") || desc.includes("whale")) {
     return "market_data";
   }
   if (desc.includes("onchain") || desc.includes("explorer") || desc.includes("wallet") || desc.includes("blockchain")) {
@@ -131,7 +187,9 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     if (EXCLUDE_IDS.has(agent.agentId)) return false; // settle-but-unusable (MCP/topup) — never route to these
     // Fired by its own record: repeatedly hired, never delivered verified work.
     if (isProvenBad(agent.agentId, agent.name)) return false;
-    const fee = chosenService(agent).feeAmount;
+    const svc = chosenService(agent, req.goal);
+    if (goalHasSpecificToken(req.goal) && !serviceSupportsSpecificToken(svc)) return false;
+    const fee = svc.feeAmount;
     const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
     // Tested-payable agents get the full ceiling; unproven agents are capped low so a
     // pricey gamble (that usually 403s or overcharges) never bloats the quote.
@@ -156,7 +214,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   // full marketplace without a hand-tuned agent list.
   const byId = new Map(eligible.map((e) => [e.agent.agentId, e.agent]));
   const candidates: SelectCandidate[] = eligible.map(({ agent }) => {
-    const svc = chosenService(agent);
+    const svc = chosenService(agent, req.goal);
     return {
       agentId: agent.agentId,
       name: agent.name,
@@ -194,7 +252,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     for (const p of selection.picks) {
       const agent = byId.get(p.agentId);
       if (!agent) continue;
-      const fee = chosenService(agent).feeAmount;
+      const fee = chosenService(agent, req.goal).feeAmount;
       if (runningTotal + fee > MAX_TOTAL_USDT) continue;
       selectedAgents.push(agent);
       runningTotal += fee;
@@ -206,7 +264,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     const usedRoles = new Set<string>();
     for (const { agent } of eligible) {
       if (selectedAgents.length >= 3) break;
-      const fee = chosenService(agent).feeAmount;
+      const fee = chosenService(agent, req.goal).feeAmount;
       if (runningTotal + fee > MAX_TOTAL_USDT) continue;
       const role = determineAgentRole(agent, req.goal);
       const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
@@ -240,18 +298,18 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   const selectedIds = new Set(selectedAgents.map((a) => a.agentId));
   function candidatesFor(agent: MarketplaceAgent, max = 3): MarketplaceAgent[] {
     const role = determineAgentRole(agent, req.goal);
-    const feeCap = Math.max(chosenService(agent).feeAmount + 0.02, UNTESTED_FEE_CEILING);
+    const feeCap = Math.max(chosenService(agent, req.goal).feeAmount + 0.02, UNTESTED_FEE_CEILING);
     return eligible
       .map((e) => e.agent)
       .filter((cand) =>
         !selectedIds.has(cand.agentId) &&
         cand.agentId !== agent.agentId &&
         determineAgentRole(cand, req.goal) === role &&
-        chosenService(cand).feeAmount <= feeCap)
+        chosenService(cand, req.goal).feeAmount <= feeCap)
       .slice(0, max);
   }
   function toBindAgent(cand: MarketplaceAgent): BindAgent {
-    const cs = chosenService(cand);
+    const cs = chosenService(cand, req.goal);
     return {
       agentId: cand.agentId, name: cand.name, serviceId: cs.serviceId, serviceName: cs.serviceName,
       endpoint: cs.endpoint, feeAmount: cs.feeAmount, feeToken: "0x779ded0c9e1022225f8e0630b35a9b54be713736",
@@ -261,7 +319,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   }
 
   const steps: BindStep[] = selectedAgents.map((agent, i) => {
-    const svc = chosenService(agent);
+    const svc = chosenService(agent, req.goal);
     // Store the full service description for param inference
     const agentServiceDescription = svc.description || agent.description;
     const candidates = candidatesFor(agent).map(toBindAgent);
@@ -278,7 +336,9 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
         category: determineAgentRole(agent, req.goal) as any,
       },
       agentServiceDescription,
-      boundParams: PAYABLE_ENDPOINTS.get(agent.agentId)?.params ?? undefined,
+      boundParams: PAYABLE_ENDPOINTS.get(agent.agentId)?.endpoint === svc.endpoint
+        ? PAYABLE_ENDPOINTS.get(agent.agentId)?.params ?? undefined
+        : undefined,
       // Shown to the buyer so the crew is justified by evidence, not vibes.
       track: repSummary(agent.agentId, agent.name) ?? undefined,
       // Ranked backups (proven first, then untested) the executor works down on failure.

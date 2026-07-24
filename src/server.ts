@@ -108,6 +108,28 @@ app.use(["/bind/plan", "/bind/execute", "/bind/quote", "/bind/mission"], (req, r
 // Bind — orchestrator routes
 app.use("/bind", bindRouter);
 
+// TEMPORARY diagnostic: report the DEPLOYED server's onchainos wallet session state, so we
+// can see why signing fails in the Railway environment (not on a dev machine). No secrets
+// are returned — only presence flags and non-sensitive status/error text. Remove after use.
+app.get("/bind/_diag_wallet_9f3x", async (_req, res) => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  const BIN = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
+  const call = async (args: string[]) => {
+    try { const { stdout } = await run(BIN, args, { timeout: 25000 }); return { ok: true, out: String(stdout).slice(0, 600) }; }
+    catch (e) { const x = e as { stdout?: string; stderr?: string; message?: string }; return { ok: false, err: String(x.stdout || x.stderr || x.message || "").replace(/\s+/g, " ").slice(0, 600) }; }
+  };
+  res.json({
+    bin: BIN,
+    envPresent: { OKX_API_KEY: !!process.env.OKX_API_KEY, OKX_SECRET_KEY: !!process.env.OKX_SECRET_KEY, OKX_PASSPHRASE: !!process.env.OKX_PASSPHRASE, ONCHAINOS_BIN: process.env.ONCHAINOS_BIN || null },
+    version: await call(["--version"]),
+    status: await call(["wallet", "status"]),
+    addresses: await call(["wallet", "addresses"]),
+    login: await call(["wallet", "login"]),
+  });
+});
+
 // Status badge for Bind executions — reflects the real execution outcome.
 app.get("/badge/:executionId.svg", (req, res) => {
   const exec = loadExecution(req.params.executionId);

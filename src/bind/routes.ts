@@ -310,25 +310,6 @@ bindRouter.get("/agents", (_req, res) => {
   });
 });
 
-// Temporary operator make-good path: protected by a Railway secret, capped, and disabled
-// unless BIND_ADMIN_TOKEN is set. Used to correct historical refund/accounting mistakes.
-bindRouter.post("/admin/refund", async (req: any, res: any) => {
-  const token = process.env.BIND_ADMIN_TOKEN;
-  const auth = String(req.headers.authorization || "");
-  if (!token || auth !== `Bearer ${token}`) {
-    res.status(404).json({ error: "not_found" });
-    return;
-  }
-  const payer = String(req.body?.payer || "");
-  const amountUsdt = Number(req.body?.amountUsdt);
-  if (!/^0x[0-9a-fA-F]{40}$/.test(payer) || !Number.isFinite(amountUsdt) || amountUsdt <= 0 || amountUsdt > 1) {
-    res.status(400).json({ error: "bad_request", message: "Provide payer and amountUsdt between 0 and 1." });
-    return;
-  }
-  const result = await refundUnspent(amountUsdt, 0, payer);
-  res.json(result);
-});
-
 // Mission history for a buyer wallet: what they commissioned, what it cost, what came
 // back. Wallet addresses are already public on-chain (every payment is a visible USDT
 // transfer to Bind), so this exposes no more than the chain does — with better labels.

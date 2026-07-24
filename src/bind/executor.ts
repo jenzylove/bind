@@ -328,6 +328,12 @@ function safeJson(text: string): unknown {
 async function evaluateOutput(step: BindStep, goal: string, output: unknown): Promise<{ passed: boolean; detail: string }> {
   const structural = verifyStepOutput(step, output);
   if (!structural.passed) return structural;
+  // Skip the LLM relevance gate for PINNED, purpose-built calls (boundParams) — e.g. the
+  // flagship's resolve/holders data-fetches. Those are configured to return one specific
+  // data type; judging their output against the whole goal wrongly fails them (it rejected
+  // valid token metadata as "insufficient for a full audit"). Relevance is meant to catch
+  // DYNAMICALLY-selected agents returning off-topic data, not our own vetted data-fetches.
+  if (step.boundParams) return { passed: true, detail: structural.detail };
   const rel = await checkRelevance(goal, step.agent.serviceName, step.agentServiceDescription ?? "", output);
   if (!rel.relevant) return { passed: false, detail: `off-topic — did not address the goal: ${rel.reason}` };
   return { passed: true, detail: structural.detail };

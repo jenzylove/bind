@@ -83,6 +83,16 @@ function settlementLog(entry: Record<string, unknown>): void {
   } catch { /* audit log is best-effort */ }
 }
 
+function settlementErrorReason(e: unknown): string {
+  const err = e as { message?: string; stderr?: string; stdout?: string };
+  const raw = err.stderr || err.stdout || err.message || String(e);
+  return raw
+    .replace(/--input-data\s+0x[a-fA-F0-9]+/g, "--input-data <redacted-calldata>")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
 async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: string): Promise<{ txHash?: string; reason?: string }> {
   const sig = signature.toLowerCase().replace(/^0x/, "");
   const common =
@@ -123,14 +133,14 @@ async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: str
       // ok:false or no hash — keep the CLI's own error/simulation message.
       lastReason = parsed?.error || parsed?.data?.executeErrorMsg || parsed?.msg || JSON.stringify(parsed).slice(0, 160);
     } catch (e) {
-      lastReason = (e as Error).message.slice(0, 160);
+      lastReason = settlementErrorReason(e);
       if (!refreshedWalletSession && /HPKE decryption failed/i.test(lastReason)) {
         refreshedWalletSession = true;
         settlementLog({ kind: "wallet_session_refresh", reason: lastReason });
         try {
           await execFileAsync(ONCHAINOS_PATH, ["wallet", "logout"], { timeout: 15000 });
         } catch (logoutErr) {
-          settlementLog({ kind: "wallet_session_refresh_failed", reason: (logoutErr as Error).message.slice(0, 160) });
+          settlementLog({ kind: "wallet_session_refresh_failed", reason: settlementErrorReason(logoutErr) });
         }
         try {
           const { stdout } = await execFileAsync(
@@ -143,7 +153,7 @@ async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: str
           if (typeof txHash === "string" && txHash.length > 0) return { txHash };
           lastReason = parsed?.error || parsed?.data?.executeErrorMsg || parsed?.msg || JSON.stringify(parsed).slice(0, 160);
         } catch (retryErr) {
-          lastReason = (retryErr as Error).message.slice(0, 160);
+          lastReason = settlementErrorReason(retryErr);
         }
       }
     }

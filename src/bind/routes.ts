@@ -10,6 +10,7 @@ import { verifyPayment, commitPayment, releasePayment } from "./pay-verify.js";
 import { settleAuthorization } from "./x402-settle.js";
 import { refundUnspent } from "./refund.js";
 import { allReputation, ledgerDetail, historyFor } from "./reputation.js";
+import { serviceReliability } from "./service-reliability.js";
 import { requireX402 } from "./x402-gate.js";
 import { config } from "../config.js";
 
@@ -328,6 +329,27 @@ bindRouter.get("/agents", (_req, res) => {
       passRate: Math.round(r.passRate * 100) / 100,
       paidUsdt: Math.round(r.paidUsdt * 1e6) / 1e6,
       trackRecordUrl: `${config.publicBaseUrl}/a/${r.agentId}`,
+    })),
+  });
+});
+
+// Service-level reliability: exact endpoint/service evidence Bind uses to route and avoid
+// repeating paid failures. This is deliberately read-only and contains no secrets.
+bindRouter.get("/reliability", (_req, res) => {
+  const rows = [...serviceReliability().values()]
+    .sort((a, b) => b.attempts - a.attempts || a.passRate - b.passRate)
+    .slice(0, 200);
+  res.json({
+    note: "Exact service endpoint reliability learned from real Bind attempts.",
+    services: rows.length,
+    rows: rows.map((r) => ({
+      key: r.key,
+      attempts: r.attempts,
+      passed: r.passed,
+      failed: r.failed,
+      paidFailed: r.paidFailed,
+      passRate: Math.round(r.passRate * 100) / 100,
+      lastFailure: r.lastFailure,
     })),
   });
 });

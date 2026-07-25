@@ -62,6 +62,21 @@ export interface BindPlan {
   flagship?: boolean;
 }
 
+
+export interface AgentAttempt {
+  agentId?: string;
+  agentName: string;
+  serviceName?: string;
+  endpoint?: string;
+  feeUsdt?: number;
+  paid: boolean;
+  status: "passed" | "failed" | "errored";
+  paymentTxHash?: string;
+  input?: unknown;
+  verificationDetail?: string;
+  error?: string;
+}
+
 export interface ExecutionResult {
   step: number;
   agentName: string;
@@ -74,6 +89,8 @@ export interface ExecutionResult {
   feeUsdt?: number;
   /** True when the primary hire flaked and the stand-in delivered instead. */
   usedFallback?: boolean;
+  /** Every primary/fallback attempt made for this step, so Bind can learn service reliability. */
+  attempts?: AgentAttempt[];
   status: "pending" | "running" | "passed" | "failed" | "skipped" | "errored" | "blocked";
   /** For a blocked step: which upstream dependency failed to deliver. */
   blockedBy?: string;

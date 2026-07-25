@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { BindExecution, BindPlan, BindStep, ExecutionResult } from "./types.js";
+import type { AgentAttempt, BindAgent, BindExecution, BindPlan, BindStep, ExecutionResult } from "./types.js";
 import { verifyStepOutput, checkRelevance } from "./verify.js";
 import { anchorExecution } from "./receipt.js";
 import { inferParams } from "./agent-infer.js";
@@ -234,6 +234,26 @@ function readSettlement(headers: Headers): { settled: boolean; txHash?: string }
 
 interface CallResult { output: unknown | null; paid: boolean; txHash?: string; error?: string; input: Record<string, unknown>; }
 
+function attemptFrom(
+  agent: BindAgent,
+  call: CallResult,
+  outcome: { passed: boolean; detail: string },
+): AgentAttempt {
+  return {
+    agentId: agent.agentId,
+    agentName: agent.name,
+    serviceName: agent.serviceName,
+    endpoint: agent.endpoint,
+    feeUsdt: call.paid ? agent.feeAmount : undefined,
+    paid: call.paid,
+    status: outcome.passed ? "passed" : call.output === null ? "errored" : "failed",
+    paymentTxHash: call.txHash,
+    input: call.input,
+    verificationDetail: outcome.detail,
+    error: call.error,
+  };
+}
+
 // Absolute hard ceiling per single agent call, regardless of the quote. Backstop against
 // an agent whose 402 challenge demands far more than its listed marketplace fee.
 const MAX_ABS_PER_CALL_USDT = 0.20;
@@ -458,6 +478,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
       let outcome = call.output === null
         ? { passed: false, detail: call.error ?? "no output" }
         : await evaluateOutput(step, plan.goal, call.output);
+      const attempts: AgentAttempt[] = [attemptFrom(agent, call, outcome)];
 
       // Dynamic fallback — the general-contractor behaviour. Work down the ranked backup
       // agents (any eligible marketplace agent, not a fixed list) until one delivers
@@ -482,6 +503,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
         const fbOutcome = fb.output === null
           ? { passed: false, detail: fb.error ?? "no output" }
           : await evaluateOutput(fbStep, plan.goal, fb.output);
+        attempts.push(attemptFrom(cand, fb, fbOutcome));
         if (fb.paid) {
           paidAttempts += 1;
           paidAttemptCost += cand.feeAmount;
@@ -502,6 +524,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
         // Unpaid failure: leave `call` on the prior attempt and try the next candidate.
       }
 
+      result.attempts = attempts;
       result.input = call.input;
       if (call.output === null) {
         result.status = "errored";

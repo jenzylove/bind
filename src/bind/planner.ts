@@ -8,6 +8,7 @@ import type { BindAgent, BindPlan, BindStep, PlanRequest } from "./types.js";
 import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceService } from "./marketplace.js";
 import { selectAgents, type SelectCandidate } from "./select.js";
 import { repSummary, isProvenBad } from "./reputation.js";
+import { serviceReliabilityPenalty, serviceReliabilitySummary } from "./service-reliability.js";
 import { isFlagshipGoal, buildFlagshipPlan } from "./flagship.js";
 
 // Guardrails so an auto-plan is never surprising or nonsensical.
@@ -79,7 +80,7 @@ function serviceSupportsSpecificToken(service: MarketplaceService, goal = ""): b
   if (goal && goalHasSpecificToken(goal) && !goalHasContractAddress(goal) && contractOnly) return false;
   return symbolAware || /(?:token contract|contract address)/.test(text);
 }
-function serviceRelevanceScore(service: MarketplaceService, goal: string): number {
+function serviceRelevanceScore(service: MarketplaceService, goal: string, agentId?: string): number {
   const goalLower = goal.toLowerCase();
   const text = `${service.serviceName} ${service.description ?? ""} ${service.endpoint}`.toLowerCase();
   let score = 0;
@@ -109,6 +110,7 @@ function serviceRelevanceScore(service: MarketplaceService, goal: string): numbe
     }
   }
 
+  score -= serviceReliabilityPenalty(agentId, service.serviceName, service.endpoint);
   return score;
 }
 // The service Bind will actually call. For a tested-payable agent we pin the exact
@@ -122,9 +124,9 @@ function chosenService(agent: MarketplaceAgent, goal?: string): MarketplaceServi
       : agent.services;
     if (services.length > 0) {
       const best = services.reduce((a, b) =>
-        serviceRelevanceScore(a, goal) >= serviceRelevanceScore(b, goal) ? a : b
+        serviceRelevanceScore(a, goal, agent.agentId) >= serviceRelevanceScore(b, goal, agent.agentId) ? a : b
       );
-      if (serviceRelevanceScore(best, goal) >= 16) return best;
+      if (serviceRelevanceScore(best, goal, agent.agentId) >= 16) return best;
     }
   }
 
@@ -218,6 +220,10 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     const aPay = PAYABLE_AGENT_IDS.has(a.agent.agentId) ? 1 : 0;
     const bPay = PAYABLE_AGENT_IDS.has(b.agent.agentId) ? 1 : 0;
     if (aPay !== bPay) return bPay - aPay;
+    const aSvc = chosenService(a.agent, req.goal);
+    const bSvc = chosenService(b.agent, req.goal);
+    const rel = serviceReliabilityPenalty(a.agent.agentId, aSvc.serviceName, aSvc.endpoint) - serviceReliabilityPenalty(b.agent.agentId, bSvc.serviceName, bSvc.endpoint);
+    if (rel !== 0) return rel;
     return b.score - a.score;
   });
 
@@ -239,7 +245,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       service: svc.serviceName,
       cheapestFee: svc.feeAmount,
       payable: PAYABLE_AGENT_IDS.has(agent.agentId),
-      track: repSummary(agent.agentId, agent.name),
+      track: [repSummary(agent.agentId, agent.name), serviceReliabilitySummary(agent.agentId, svc.serviceName, svc.endpoint)].filter(Boolean).join(" | ") || null,
     };
   });
   // Cap the crew at 3. The router used to pad to 4, which hired near-duplicate agents

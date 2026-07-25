@@ -71,6 +71,44 @@ async function httpCall(method: "GET" | "POST", url: string, body: Record<string
   }
 }
 
+function extractGoalSymbol(goal: string): string | null {
+  const dollar = goal.match(/\$([A-Za-z][A-Za-z0-9]{1,11})\b/);
+  if (dollar) return dollar[1].toUpperCase();
+
+  const stop = new Set(["USDT", "USDC", "USD", "BTC", "ETH", "SOL", "BNB", "OKX", "DEX", "A2MCP", "API"]);
+  const bare = goal.match(/\b[A-Z][A-Z0-9]{2,11}\b/g) ?? [];
+  return bare.find((x) => !stop.has(x)) ?? null;
+}
+
+function extractGoalAddress(goal: string): string | null {
+  return goal.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? null;
+}
+
+function applyRequestParams(
+  endpoint: string,
+  body: Record<string, unknown>,
+  method: "GET" | "POST",
+): { url: string; body: Record<string, unknown> | null } {
+  let url = endpoint;
+  const remaining: Record<string, unknown> = { ...body };
+  for (const [key, value] of Object.entries(body)) {
+    const token = `{${key}}`;
+    if (url.includes(token)) {
+      url = url.replaceAll(token, encodeURIComponent(String(value)));
+      delete remaining[key];
+    }
+  }
+  if (method === "GET" && Object.keys(remaining).length > 0) {
+    const u = new URL(url);
+    for (const [key, value] of Object.entries(remaining)) {
+      if (value !== undefined && value !== null && value !== "") u.searchParams.set(key, String(value));
+    }
+    url = u.toString();
+    return { url, body: null };
+  }
+  return { url, body: remaining };
+}
+
 async function walletLogin(): Promise<void> {
   // Best-effort: a live session may already exist, in which case a re-login errors
   // harmlessly. Real auth failures surface later as a failed payment sign.
@@ -110,21 +148,23 @@ async function signPayment(challengeB64: string): Promise<string | null> {
 // the service description and build params for that agent (Option D: works with ANY agent).
 function getParams(endpoint: string, goal: string): { body: Record<string, unknown>; method: "POST" | "GET" } | null {
   const e = endpoint;
-  const hasAddr = goal.includes("0x");
+  const addr = extractGoalAddress(goal);
+  const hasAddr = Boolean(addr);
+  const symbol = extractGoalSymbol(goal);
   // Onchain Data Explorer (Agent 2023) — OKX Official
   if (e.includes("get_chain_info")) return { body: { chainIndex: "196" }, method: "POST" };
-  if (e.includes("get_token_info")) return { body: { chainIndex: "196", tokenAddress: hasAddr ? goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736" }, method: "POST" };
-  if (e.includes("get_address_profile")) return { body: { chainIndex: "196", address: hasAddr ? goal : "0x22700698c503be7dfdeaaacc2e4e41c767c263b" }, method: "POST" };
-  if (e.includes("get_token_price_history")) return { body: { chainIndex: "196", tokenAddress: hasAddr ? goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736", granularity: "1D" }, method: "POST" };
+  if (e.includes("get_token_info")) return { body: { chainIndex: "196", tokenAddress: addr ?? "0x779ded0c9e1022225f8e0630b35a9b54be713736" }, method: "POST" };
+  if (e.includes("get_address_profile")) return { body: { chainIndex: "196", address: addr ?? "0x22700698c503be7dfdeaaacc2e4e41c767c263b" }, method: "POST" };
+  if (e.includes("get_token_price_history")) return { body: { chainIndex: "196", tokenAddress: addr ?? "0x779ded0c9e1022225f8e0630b35a9b54be713736", granularity: "1D" }, method: "POST" };
   if (e.includes("get_block")) return { body: { chainIndex: "196", by: "height", value: "21000000" }, method: "POST" };
   if (e.includes("get_transaction")) return { body: { chainIndex: "196", txHash: hasAddr ? goal : "0x" }, method: "POST" };
   if (e.includes("get_contract_source")) return { body: { chainIndex: "196", address: hasAddr ? goal : "0x" }, method: "POST" };
   if (e.includes("get_token_holders")) return { body: { chainIndex: "196", tokenAddress: hasAddr ? goal : "0x", n: 5 }, method: "POST" };
   if (e.includes("get_address_transactions")) return { body: { chainIndex: "196", address: hasAddr ? goal : "0x22700698c503be7dfdeaaacc2e4e41c767c263b", limit: 3 }, method: "POST" };
-  if (e.includes("get_token_price")) return { body: { chainIndex: "196", tokenAddresses: [hasAddr ? goal : "0x779ded0c9e1022225f8e0630b35a9b54be713736"] }, method: "POST" };
+  if (e.includes("get_token_price")) return { body: { chainIndex: "196", tokenAddresses: [addr ?? "0x779ded0c9e1022225f8e0630b35a9b54be713736"] }, method: "POST" };
   if (e.includes("get_event_logs")) return { body: { chainIndex: "196", by: "tx", txHash: "0x" }, method: "POST" };
   if (e.includes("list_chains")) return { body: {}, method: "POST" };
-  if (e.includes("universal_search")) return { body: { input: hasAddr ? goal : "0x" }, method: "POST" };
+  if (e.includes("universal_search")) return { body: { input: addr ?? symbol ?? goal }, method: "POST" };
   // NewsLiquid (Agent 2135)
   if (e.includes("news_search") || e.includes("news_type")) return { body: { q: goal }, method: "POST" };
   if (e.includes("twitter_user_tweets")) return { body: { username: "Dollar782", maxResults: "3" }, method: "POST" };
@@ -146,14 +186,32 @@ function getParams(endpoint: string, goal: string): { body: Record<string, unkno
   if (e.includes("barker_pool_detail") || e.includes("barker_pool_history")) return { body: { poolUid: "" }, method: "POST" };
   // Warden (Agent 3808) — payload security scan. Params learned from its 422 error.
   if (e.includes("warden") && e.includes("scan")) {
-    const addr = goal.match(/0x[a-fA-F0-9]{40}/)?.[0];
     return { body: { payload: addr ?? goal }, method: "POST" };
   }
-  // Keryx (Agent 4759) — crypto price feed; wants comma-separated ids.
-  if (e.includes("keryx") || e.includes("crypto-price")) {
-    const g = goal.toLowerCase();
-    const ids = ["bitcoin", "ethereum", "solana", "bnb", "xrp", "dogecoin"].filter((c) => g.includes(c) || g.includes(c.slice(0, 3)));
-    return { body: { ids: (ids.length ? ids : ["bitcoin", "ethereum", "solana"]).join(",") }, method: "POST" };
+  if (e.includes("token-fundamentals")) {
+    return { body: { coin: symbol ?? "HYPE" }, method: "POST" };
+  }
+  if (e.includes("api.ethyai.app/paid/v1/xlayer/score")) {
+    return { body: { chain: "hyperliquid", asset: symbol ?? "HYPE" }, method: "GET" };
+  }
+  // Keryx (Agent 4759) — generic crypto price feed; use exact aliases only.
+  if (e.includes("crypto-price")) {
+    const aliases: Record<string, string> = {
+      BTC: "bitcoin",
+      BITCOIN: "bitcoin",
+      ETH: "ethereum",
+      ETHEREUM: "ethereum",
+      SOL: "solana",
+      SOLANA: "solana",
+      BNB: "bnb",
+      XRP: "xrp",
+      DOGE: "dogecoin",
+      DOGECOIN: "dogecoin",
+      HYPE: "hyperliquid",
+      HYPERLIQUID: "hyperliquid",
+    };
+    const id = symbol ? aliases[symbol] : null;
+    return { body: { ids: id ?? "bitcoin,ethereum,solana" }, method: "POST" };
   }
   // Unknown endpoint — let inferParams read the service description instead.
   return null;
@@ -267,8 +325,14 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   // (a resolved token address, a selected symbol) is authoritative for this step.
   if (injected && body && typeof body === "object") body = { ...body, ...injected };
 
-  let res = await httpCall(method, endpoint, body);
-  if (res.status === 405 && method === "POST") res = await httpCall("GET", endpoint, null);
+  let replayMethod = method;
+  let request = applyRequestParams(endpoint, body, replayMethod);
+  let res = await httpCall(replayMethod, request.url, request.body);
+  if (res.status === 405 && replayMethod === "POST") {
+    replayMethod = "GET";
+    request = applyRequestParams(endpoint, body, replayMethod);
+    res = await httpCall(replayMethod, request.url, null);
+  }
 
   if (res.status === 200) {
     return { output: safeJson(res.body), paid: false, input: body };
@@ -303,8 +367,9 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   const auth = await signPayment(challengeB64);
   if (!auth) return { output: null, paid: false, error: "payment signing failed", input: body };
 
-  let paid = await httpCall("POST", endpoint, body, { "PAYMENT-SIGNATURE": auth });
-  if (paid.status !== 200) paid = await httpCall("POST", endpoint, body, { "Authorization": `X402 ${auth}` });
+  const paidRequest = applyRequestParams(endpoint, body, replayMethod);
+  let paid = await httpCall(replayMethod, paidRequest.url, paidRequest.body, { "PAYMENT-SIGNATURE": auth });
+  if (paid.status !== 200) paid = await httpCall(replayMethod, paidRequest.url, paidRequest.body, { "Authorization": `X402 ${auth}` });
 
   if (paid.status !== 200) {
     return { output: null, paid: false, error: `paid call returned ${paid.status}: ${paid.body.slice(0, 80)}`, input: body };

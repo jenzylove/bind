@@ -65,9 +65,19 @@ function cheapestService(agent: MarketplaceAgent): MarketplaceService {
 function goalHasSpecificToken(goal: string): boolean {
   return /(?:\$[A-Za-z][A-Za-z0-9]{1,11}\b|\b[A-Z0-9]{2,12}\b)/.test(goal);
 }
-function serviceSupportsSpecificToken(service: MarketplaceService): boolean {
-  const text = `${service.serviceName} ${service.description ?? ""}`.toLowerCase();
-  return /(?:token symbol|symbol or contract|token contract|contract address|market symbol|any token|single token|asset as|chain and asset|optional token|optional topic)/.test(text);
+function goalHasContractAddress(goal: string): boolean {
+  return /0x[a-fA-F0-9]{40}/.test(goal);
+}
+function isStockOrEquityService(service: MarketplaceService): boolean {
+  const text = `${service.serviceName} ${service.description ?? ""} ${service.endpoint}`.toLowerCase();
+  return /(?:stock|stocks|equity|equities|share price|tokenized share|company headlines|analyst research)/.test(text);
+}
+function serviceSupportsSpecificToken(service: MarketplaceService, goal = ""): boolean {
+  const text = `${service.serviceName} ${service.description ?? ""} ${service.endpoint}`.toLowerCase();
+  const symbolAware = /(?:token symbol|symbol or contract|symbol, name|symbol name|coin parameter|coingecko id|market symbol|ticker|asset as|chain and asset|optional token|optional topic|any token|single token|crypto price|token fundamentals)/.test(text);
+  const contractOnly = /(?:token contract address|contract address)/.test(text) && !symbolAware;
+  if (goal && goalHasSpecificToken(goal) && !goalHasContractAddress(goal) && contractOnly) return false;
+  return symbolAware || /(?:token contract|contract address)/.test(text);
 }
 function serviceRelevanceScore(service: MarketplaceService, goal: string): number {
   const goalLower = goal.toLowerCase();
@@ -87,6 +97,10 @@ function serviceRelevanceScore(service: MarketplaceService, goal: string): numbe
     ]) {
       if (text.includes(signal)) score += 8;
     }
+    if (isStockOrEquityService(service)) score -= 60;
+    if (!goalHasContractAddress(goal) && /(?:token contract address|contract address)/.test(text) && !/(?:token symbol|symbol, name|coin parameter|market symbol|ticker|asset as|chain and asset)/.test(text)) {
+      score -= 30;
+    }
     for (const generic of [
       "defi macro", "macro overview", "valuation multiples", "supported chains",
       "yield", "top pools", "bridge", "swap", "portfolio",
@@ -104,7 +118,7 @@ function serviceRelevanceScore(service: MarketplaceService, goal: string): numbe
 function chosenService(agent: MarketplaceAgent, goal?: string): MarketplaceService {
   if (goal && agent.services.length > 1) {
     const services = goalHasSpecificToken(goal)
-      ? agent.services.filter(serviceSupportsSpecificToken)
+      ? agent.services.filter((service) => serviceSupportsSpecificToken(service, goal))
       : agent.services;
     if (services.length > 0) {
       const best = services.reduce((a, b) =>
@@ -188,7 +202,8 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     // Fired by its own record: repeatedly hired, never delivered verified work.
     if (isProvenBad(agent.agentId, agent.name)) return false;
     const svc = chosenService(agent, req.goal);
-    if (goalHasSpecificToken(req.goal) && !serviceSupportsSpecificToken(svc)) return false;
+    if (goalHasSpecificToken(req.goal) && isStockOrEquityService(svc)) return false;
+    if (goalHasSpecificToken(req.goal) && !serviceSupportsSpecificToken(svc, req.goal)) return false;
     const fee = svc.feeAmount;
     const payable = PAYABLE_AGENT_IDS.has(agent.agentId);
     // Tested-payable agents get the full ceiling; unproven agents are capped low so a

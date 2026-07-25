@@ -16,6 +16,31 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
+function subjectAliases(goal: string): string[] {
+  const aliases: Record<string, string[]> = {
+    HYPE: ["hype", "hyperliquid"],
+    BTC: ["btc", "bitcoin"],
+    ETH: ["eth", "ethereum"],
+    SOL: ["sol", "solana"],
+    DOGE: ["doge", "dogecoin"],
+    BNB: ["bnb"],
+    XRP: ["xrp"],
+  };
+  const found = new Set<string>();
+  for (const m of goal.matchAll(/\$([A-Za-z][A-Za-z0-9]{1,11})\b/g)) {
+    const sym = m[1].toUpperCase();
+    for (const a of aliases[sym] ?? [sym.toLowerCase()]) found.add(a);
+  }
+  return [...found];
+}
+
+function outputMentionsSubject(goal: string, outputText: string): boolean {
+  const aliases = subjectAliases(goal);
+  if (aliases.length === 0) return false;
+  const text = outputText.toLowerCase();
+  return aliases.some((a) => new RegExp(`\\b${a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
+}
+
 /**
  * Judge whether an agent's output genuinely helps answer the goal. Fail-OPEN: if there is
  * no API key or the call errors, we do NOT reject (relevance is an extra filter, never a
@@ -27,8 +52,9 @@ export async function checkRelevance(
   serviceDescription: string,
   output: unknown,
 ): Promise<{ relevant: boolean; reason: string }> {
-  if (!ANTHROPIC_KEY) return { relevant: true, reason: "relevance check unavailable" };
   const text = typeof output === "string" ? output : JSON.stringify(output);
+  if (outputMentionsSubject(goal, text)) return { relevant: true, reason: "output mentions requested token subject or alias" };
+  if (!ANTHROPIC_KEY) return { relevant: true, reason: "relevance check unavailable" };
   const snippet = text.slice(0, 2500);
   try {
     const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
@@ -38,7 +64,7 @@ export async function checkRelevance(
       system:
         "You judge whether an agent's returned data genuinely helps answer a user's goal. " +
         "Be strict about SUBJECT match: data about a different subject (e.g. crypto whale wallets when the goal is a football match, or generic top-trader lists when a specific token was asked about) is NOT relevant even if well-formed. " +
-        "But accept partial or imperfect data that still speaks to the goal's actual subject. " +
+        "But accept partial or imperfect data that still speaks to the goal's actual subject. Treat common token aliases as the same subject, for example $HYPE and Hyperliquid. " +
         'Return ONLY JSON: {"relevant": true|false, "reason": "<=15 words"}.',
       messages: [
         { role: "user", content: [{ type: "text", text: `Goal: ${goal}\nAgent: ${serviceName} — ${serviceDescription}\nReturned data:\n${snippet}\n\nDoes this data genuinely help answer the goal?` }] },

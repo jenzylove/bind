@@ -237,6 +237,8 @@ interface CallResult { output: unknown | null; paid: boolean; txHash?: string; e
 // Absolute hard ceiling per single agent call, regardless of the quote. Backstop against
 // an agent whose 402 challenge demands far more than its listed marketplace fee.
 const MAX_ABS_PER_CALL_USDT = 0.20;
+const MAX_PAID_ATTEMPTS_PER_STEP = 3;
+const MAX_FAILED_FALLBACK_SPEND_USDT = 0.15;
 const USDT_ASSET_LC = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
 
 // Decodes a 402 challenge to the amount (in USDT) and asset it actually demands. An
@@ -459,12 +461,17 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
 
       // Dynamic fallback — the general-contractor behaviour. Work down the ranked backup
       // agents (any eligible marketplace agent, not a fixed list) until one delivers
-      // RELEVANT verified output. We only try a backup while the current attempt failed AND
-      // took no payment: a dead, useless, or off-topic-but-free agent is replaced for free,
-      // but once money has actually moved we stop, so a buyer is never charged twice.
+      // RELEVANT verified output. A paid-but-bad output is now allowed to fall through to
+      // the next candidate, but only under a strict Bind-side risk cap. The buyer still
+      // pays only for verified work; failed paid attempts are refunded/absorbed by Bind.
       const backups = step.candidates?.length ? step.candidates : (step.fallbackAgent ? [step.fallbackAgent] : []);
+      let paidAttempts = call.paid ? 1 : 0;
+      let failedPaidSpend = call.paid && !outcome.passed ? agent.feeAmount : 0;
+      let paidAttemptCost = call.paid ? agent.feeAmount : 0;
       for (const cand of backups) {
-        if (call.paid || outcome.passed) break;
+        if (outcome.passed) break;
+        if (paidAttempts >= MAX_PAID_ATTEMPTS_PER_STEP) break;
+        if (failedPaidSpend >= MAX_FAILED_FALLBACK_SPEND_USDT) break;
         const fbStep: BindStep = {
           ...step,
           agent: cand,
@@ -475,9 +482,14 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
         const fbOutcome = fb.output === null
           ? { passed: false, detail: fb.error ?? "no output" }
           : await evaluateOutput(fbStep, plan.goal, fb.output);
+        if (fb.paid) {
+          paidAttempts += 1;
+          paidAttemptCost += cand.feeAmount;
+          if (!fbOutcome.passed) failedPaidSpend += cand.feeAmount;
+        }
         if (fbOutcome.passed || fb.paid) {
-          // Either this backup delivered relevant work, or it took payment (record it and
-          // stop spending). It becomes the recorded attempt for this step.
+          // Keep the best/latest paid attempt on record. If it failed, continue while the
+          // retry budget allows; if it passed, stop immediately with a deliverable.
           call = fb;
           agent = cand;
           outcome = fbOutcome;
@@ -485,7 +497,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
           result.agentName = cand.name;
           result.serviceName = cand.serviceName;
           result.agentId = cand.agentId;
-          break;
+          if (fbOutcome.passed) break;
         }
         // Unpaid failure: leave `call` on the prior attempt and try the next candidate.
       }
@@ -503,7 +515,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
           // (audit C3) — label it honestly so receipts and reputation don't overstate.
           result.paymentTxHash = call.txHash ?? "settlement_unconfirmed";
           result.feeUsdt = agent.feeAmount;
-          totalPaid += agent.feeAmount;
+          totalPaid += Math.max(paidAttemptCost, agent.feeAmount);
         } else {
           result.paymentTxHash = "no_payment_needed";
         }

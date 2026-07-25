@@ -151,6 +151,7 @@ function getParams(endpoint: string, goal: string): { body: Record<string, unkno
   const addr = extractGoalAddress(goal);
   const hasAddr = Boolean(addr);
   const symbol = extractGoalSymbol(goal);
+  if (e.includes("pitchook.xyz/v1/x402/agent")) return { body: { prompt: goal }, method: "POST" };
   // Onchain Data Explorer (Agent 2023) — OKX Official
   if (e.includes("get_chain_info")) return { body: { chainIndex: "196" }, method: "POST" };
   if (e.includes("get_token_info")) return { body: { chainIndex: "196", tokenAddress: addr ?? "0x779ded0c9e1022225f8e0630b35a9b54be713736" }, method: "POST" };

@@ -204,6 +204,7 @@ async function getCatalog(): Promise<MarketplaceAgent[]> {
   loadSeedCatalog();       // repo floor: ~200 real agents, always available
   const now = Date.now();
   if (catalogCache && now - catalogCache.timestamp < CACHE_TTL_MS) return catalogCache.agents;
+  if (process.env.BIND_DISABLE_CATALOG_REFRESH === "1") return catalogCache?.agents ?? [];
   if (catalogCache) { void startRefresh(); return catalogCache.agents; }
   return startRefresh();
 }

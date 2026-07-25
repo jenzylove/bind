@@ -10,6 +10,7 @@ import { selectAgents, type SelectCandidate } from "./select.js";
 import { repSummary, isProvenBad } from "./reputation.js";
 import { serviceReliabilityPenalty, serviceReliabilitySummary } from "./service-reliability.js";
 import { isFlagshipGoal, buildFlagshipPlan } from "./flagship.js";
+import { detectGoalDomain, domainMismatchReason, serviceMatchesGoalDomain } from "./routing-fit.js";
 
 // Guardrails so an auto-plan is never surprising or nonsensical.
 const PER_STEP_FEE_CEILING = 0.60;   // ceiling for tested-payable agents
@@ -60,11 +61,31 @@ function isActionAgent(agent: MarketplaceAgent): boolean {
   const t = `${agent.name} ${agent.description}`.toLowerCase();
   return /(launch|mint|deploy|create token|token creation|swap|\bbuy\b|\bsell\b|bridge|stake|airdrop a)/.test(t);
 }
+function goalIsClearlyNonCrypto(goal: string): boolean {
+  return /\b(cv|resume|curriculum vitae|cover letter|job application|jobs?|hiring|career|portfolio|linkedin|interview|personal statement)\b/i.test(goal);
+}
+function isFinancialMarketService(agent: MarketplaceAgent, service: MarketplaceService): boolean {
+  const text = `${agent.name} ${agent.description} ${agent.category} ${service.serviceName} ${service.description ?? ""} ${service.endpoint}`.toLowerCase();
+  return /\b(crypto|token|onchain|on-chain|blockchain|wallet|defi|dex|swap|bridge|x layer|xlayer|trading|trade|traders|market|markets|market cap|price|price feed|chart|charts|tradingview|rsi|macd|ohlcv|perp|futures|funding|liquidity|holders|honeypot|rug|kol sentiment|whale|polymarket|prediction market)\b/.test(text);
+}
+function supportsCareerDocumentGoal(agent: MarketplaceAgent, service: MarketplaceService): boolean {
+  const text = `${agent.name} ${agent.description} ${agent.category} ${service.serviceName} ${service.description ?? ""} ${service.endpoint}`.toLowerCase();
+  return /\b(cv|resume|curriculum vitae|cover letter|job application|career|linkedin|portfolio|document|docx|pdf|writing|writer|copy|content|plain-language request|summaries|web search|research assistant|chat completion|managed agent task|task execution)\b/.test(text);
+}
 function cheapestService(agent: MarketplaceAgent): MarketplaceService {
   return agent.services.reduce((a, b) => (a.feeAmount <= b.feeAmount ? a : b));
 }
+const TOKEN_SYMBOL_STOPWORDS = new Set([
+  "AI", "API", "APIS", "CV", "DOC", "DOCX", "PDF", "PPT", "PPTX", "UI", "UX",
+  "CEO", "CTO", "CFO", "COO", "HR", "JD", "KPI", "OKX", "MCP", "A2MCP",
+]);
+const COMMON_CRYPTO_SYMBOLS = new Set(["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "HYPE", "OKB", "USDT", "USDC"]);
 function goalHasSpecificToken(goal: string): boolean {
-  return /(?:\$[A-Za-z][A-Za-z0-9]{1,11}\b|\b[A-Z0-9]{2,12}\b)/.test(goal);
+  if (/\$[A-Za-z][A-Za-z0-9]{1,11}\b/.test(goal)) return true;
+  const bare = goal.match(/\b[A-Z][A-Z0-9]{1,11}\b/g) ?? [];
+  return bare.some((sym) =>
+    !TOKEN_SYMBOL_STOPWORDS.has(sym) && (COMMON_CRYPTO_SYMBOLS.has(sym) || sym.length >= 3)
+  );
 }
 function goalHasContractAddress(goal: string): boolean {
   return /0x[a-fA-F0-9]{40}/.test(goal);
@@ -119,13 +140,17 @@ function serviceRelevanceScore(service: MarketplaceService, goal: string, agentI
 // generic sibling service just because it was the last probed endpoint.
 function chosenService(agent: MarketplaceAgent, goal?: string): MarketplaceService {
   if (goal && agent.services.length > 1) {
+    const domain = detectGoalDomain(goal);
+    const domainServices = agent.services.filter((service) => serviceMatchesGoalDomain(goal, agent, service));
+    const baseServices = domainServices.length > 0 ? domainServices : agent.services;
     const services = goalHasSpecificToken(goal)
-      ? agent.services.filter((service) => serviceSupportsSpecificToken(service, goal))
-      : agent.services;
+      ? baseServices.filter((service) => serviceSupportsSpecificToken(service, goal))
+      : baseServices;
     if (services.length > 0) {
       const best = services.reduce((a, b) =>
         serviceRelevanceScore(a, goal, agent.agentId) >= serviceRelevanceScore(b, goal, agent.agentId) ? a : b
       );
+      if (domain !== "general" && domainServices.length > 0) return best;
       if (serviceRelevanceScore(best, goal, agent.agentId) >= 16) return best;
     }
   }
@@ -157,6 +182,9 @@ function determineAgentRole(agent: MarketplaceAgent, goal: string): string {
   }
   if (/health|diet|fitness|nutrition|calorie|workout|wellness|medical/.test(desc)) {
     return "health";
+  }
+  if (goalIsClearlyNonCrypto(goal) && supportsCareerDocumentGoal(agent, svc)) {
+    return "content";
   }
   const safetyGoal = /\b(safe|safety|risk|audit|verify|scan|honeypot|rug|security)\b/.test(goalLower);
   if (!safetyGoal && (desc.includes("sentiment") || desc.includes("social") || desc.includes("news") || desc.includes("twitter") || desc.includes("kol"))) {
@@ -193,6 +221,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   if (isFlagshipGoal(req.goal)) return buildFlagshipPlan(req.goal);
 
   const analytical = goalIsAnalytical(req.goal);
+  const nonCryptoGoal = goalIsClearlyNonCrypto(req.goal);
   const scored = await findMatchingAgentsScored(req.goal);
 
   // Hard guardrails: must have a callable service, must be affordable, and must not
@@ -204,6 +233,9 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     // Fired by its own record: repeatedly hired, never delivered verified work.
     if (isProvenBad(agent.agentId, agent.name)) return false;
     const svc = chosenService(agent, req.goal);
+    if (!serviceMatchesGoalDomain(req.goal, agent, svc)) return false;
+    if (nonCryptoGoal && isFinancialMarketService(agent, svc)) return false;
+    if (nonCryptoGoal && !supportsCareerDocumentGoal(agent, svc)) return false;
     if (goalHasSpecificToken(req.goal) && isStockOrEquityService(svc)) return false;
     if (goalHasSpecificToken(req.goal) && !serviceSupportsSpecificToken(svc, req.goal)) return false;
     const fee = svc.feeAmount;
@@ -306,7 +338,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       priceBreakdown: [],
       estimatedTime: "N/A",
       createdAt: new Date().toISOString(),
-      note: "No compatible agents found on the marketplace for this goal. Try a different description.",
+      note: domainMismatchReason(req.goal),
     };
   }
 

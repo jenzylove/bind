@@ -141,7 +141,18 @@ const executeHandler = async (req: any, res: any) => {
       return;
     }
     if (!plan) {
-      res.status(400).json({ error: "bad_request", message: "Provide a 'goal' to run a mission in one call, or a 'planId' from a previous /bind/plan call." });
+      let refund: Awaited<ReturnType<typeof refundUnspent>> | undefined;
+      if (x402?.settled && x402.payer) {
+        refund = await refundUnspent(x402.paidUsdt, 0, x402.payer);
+      }
+      res.status(400).json({
+        error: "bad_request",
+        message: x402?.settled
+          ? "Provide a 'goal' to run a mission in one call, or a 'planId' from a previous /bind/plan call. Your invalid-request payment has been refunded on-chain."
+          : "Provide a 'goal' to run a mission in one call, or a 'planId' from a previous /bind/plan call.",
+        refunded: refund?.refunded ?? 0,
+        refundTxHash: refund?.txHash,
+      });
       return;
     }
 

@@ -59,6 +59,7 @@ export function serviceReliability(): Map<string, ServiceReliability> {
     for (const step of exec.stepResults ?? []) {
       const attempts = step.attempts?.length ? step.attempts : [legacyAttempt(step)];
       for (const attempt of attempts) {
+        if (!attempt.agentId && !attempt.serviceName && !attempt.endpoint) continue;
         const key = serviceKey(attempt.agentId, attempt.serviceName, attempt.endpoint);
         const rec = stats.get(key) ?? { key, attempts: 0, passed: 0, failed: 0, paidFailed: 0, passRate: 0 };
         rec.attempts += 1;

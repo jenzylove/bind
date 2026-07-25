@@ -16,7 +16,6 @@ import { renderMissionPage } from "./bind/mission-page.js";
 import { scheduleAutoprobe } from "./bind/autoprobe.js";
 import { renderAgentPage, scoreColor, scoreLabel } from "./bind/agent-page.js";
 import { agentEvidence } from "./bind/reputation.js";
-import { refundUnspent } from "./bind/refund.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "..", "public");
@@ -145,21 +144,6 @@ app.get("/bind/_login_poll_9f3x", async (req, res) => {
   res.json({ result, walletNow: after });
 });
 
-// TEMPORARY protected refund endpoint for the settled invalid-request replay on 2026-07-25.
-// Remove immediately after the one make-good refund is confirmed.
-app.post("/bind/_tmp_refund_20260725_b7d4", async (req, res) => {
-  if (!process.env.TMP_REFUND_TOKEN || req.header("x-admin-token") !== process.env.TMP_REFUND_TOKEN) {
-    res.status(403).json({ error: "forbidden" });
-    return;
-  }
-  const to = String(req.body?.to ?? "");
-  const amount = Number(req.body?.amount ?? 0);
-  if (!/^0x[0-9a-fA-F]{40}$/.test(to) || !Number.isFinite(amount) || amount <= 0 || amount > 0.5) {
-    res.status(400).json({ error: "bad_request" });
-    return;
-  }
-  res.json(await refundUnspent(amount, 0, to));
-});
 
 // Status badge for Bind executions — reflects the real execution outcome.
 app.get("/badge/:executionId.svg", (req, res) => {

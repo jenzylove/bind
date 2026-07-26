@@ -52,6 +52,11 @@ async function getUsdtBalance(): Promise<number | null> {
 }
 
 interface HttpResult { status: number; body: string; headers: Headers; }
+interface RequestParams {
+  body: Record<string, unknown>;
+  method: "POST" | "GET";
+  unavailableReason?: string;
+}
 
 async function httpCall(method: "GET" | "POST", url: string, body: Record<string, unknown> | null, headers: Record<string, string> = {}): Promise<HttpResult> {
   const controller = new AbortController();
@@ -111,11 +116,68 @@ function applyRequestParams(
 
 function goalFieldValue(name: string, goal: string): unknown {
   const n = name.toLowerCase();
+  const creativeName = extractCreativeName(goal);
   if (["brief", "description", "business", "company", "projectdescription", "prompt", "query", "q", "text", "topic", "mood"].includes(n)) return goal;
   if (["style", "preferences", "stylepreferences"].includes(n)) return goal.toLowerCase().includes("pink") ? "pink, skincare, soft premium" : "clean, polished, professional";
   if (["track", "category"].includes(n)) return /\b(crypto|web3|token|defi|wallet|onchain|on-chain)\b/i.test(goal) ? "web3" : "traditional";
-  if (["name", "brand", "brandname"].includes(n)) return goal.toLowerCase().includes("skincare") ? "Pink Skincare Brand" : goal.slice(0, 60);
+  if (["name", "brand", "brandname", "brand_name", "title", "channel", "channelname", "channel_name"].includes(n)) return creativeName ?? (goal.toLowerCase().includes("skincare") ? "Pink Skincare Brand" : goal.slice(0, 60));
+  if (["kind", "type"].includes(n)) return /\b(token|coin)\b/i.test(goal) ? "token" : /\b(agent)\b/i.test(goal) ? "agent" : "company";
+  if (["format", "deliverable", "output"].includes(n)) return /\blogo\b/i.test(goal) ? "logo" : "brand kit";
   return undefined;
+}
+
+function extractCreativeName(goal: string): string | null {
+  const patterns = [
+    /\b(?:titled|called|named|name is|title is)\s+["']?([a-z0-9][a-z0-9 ._-]{1,40})["']?/i,
+    /\bfor\s+(?:my\s+)?(?:brand|channel|project|company)\s+["']?([a-z0-9][a-z0-9 ._-]{1,40})["']?/i,
+  ];
+  for (const re of patterns) {
+    const match = goal.match(re)?.[1]?.trim();
+    if (match) return match.replace(/\s+(?:logo|brand|channel|youtube|music).*$/i, "").trim();
+  }
+  return null;
+}
+
+function creativeStyle(goal: string): string {
+  const tags = ["clean", "memorable", "scalable", "music-channel-ready"];
+  if (/\bpink\b/i.test(goal)) tags.push("pink");
+  if (/\b(skincare|beauty)\b/i.test(goal)) tags.push("soft premium beauty");
+  if (/\b(music|song|youtube|yt)\b/i.test(goal)) tags.push("modern audio/music identity");
+  if (/\b(luxury|premium)\b/i.test(goal)) tags.push("premium");
+  if (/\b(minimal|minimalist)\b/i.test(goal)) tags.push("minimalist");
+  return tags.join(", ");
+}
+
+function creativeRequestBody(goal: string): Record<string, unknown> {
+  const name = extractCreativeName(goal) ?? "Untitled Brand";
+  return {
+    q: goal,
+    prompt: goal,
+    brief: goal,
+    description: goal,
+    name,
+    brand: name,
+    brandName: name,
+    brand_name: name,
+    title: name,
+    channelName: name,
+    kind: /\b(token|coin)\b/i.test(goal) ? "token" : /\b(agent)\b/i.test(goal) ? "agent" : "company",
+    style: creativeStyle(goal),
+    visualStyle: creativeStyle(goal),
+    format: /\blogo\b/i.test(goal) ? "logo" : "brand kit",
+    deliverable: /\blogo\b/i.test(goal) ? "logo" : "brand identity",
+    targetAudience: /\b(youtube|yt|music)\b/i.test(goal) ? "YouTube music listeners" : "general audience",
+  };
+}
+
+function hasProvidedImageInput(inputs?: Record<string, unknown>): boolean {
+  if (!inputs) return false;
+  return ["asset_base64", "assetBase64", "image_base64", "imageBase64", "image", "imageUrl", "assetUrl"]
+    .some((key) => typeof inputs[key] === "string" && String(inputs[key]).trim().length > 0);
+}
+
+function requiresExistingImage(text: string): boolean {
+  return /\b(asset_base64|image_base64|mask|watermark|compositor|edit-image|image compositor|remove watermark|existing image|source image|original image)\b/i.test(text);
 }
 
 function repairParamsFromInputError(current: Record<string, unknown>, errorBody: string, goal: string): Record<string, unknown> | null {
@@ -125,6 +187,11 @@ function repairParamsFromInputError(current: Record<string, unknown>, errorBody:
   for (const name of parsed?.requiredAnyOf ?? []) if (typeof name === "string") names.add(name);
   for (const field of parsed?.fields ?? []) {
     if (field?.required && typeof field.name === "string") names.add(field.name);
+  }
+  for (const item of parsed?.detail ?? []) {
+    const loc = Array.isArray(item?.loc) ? item.loc : [];
+    const name = loc[0] === "body" ? loc[loc.length - 1] : undefined;
+    if (typeof name === "string") names.add(name);
   }
   if (names.size === 0) return null;
 
@@ -223,8 +290,20 @@ async function payAgentWithCli(endpoint: string, method: "GET" | "POST", body: R
 // Hardcoded, proven parameter mappings for the four agents Bind has tested end-to-end.
 // Returns null when the endpoint is unknown — the caller then asks inferParams to read
 // the service description and build params for that agent (Option D: works with ANY agent).
-function getParams(endpoint: string, goal: string, missionInputs?: Record<string, unknown>): { body: Record<string, unknown>; method: "POST" | "GET" } | null {
+function getParams(step: BindStep, goal: string, missionInputs?: Record<string, unknown>): RequestParams | null {
+  const endpoint = step.agent.endpoint;
   const e = endpoint;
+  const serviceText = `${step.agent.name} ${step.agent.serviceName} ${step.agentServiceDescription ?? step.agent.serviceDescription ?? ""} ${endpoint}`;
+  if (requiresExistingImage(serviceText) && !hasProvidedImageInput(missionInputs)) {
+    return {
+      body: {},
+      method: "POST",
+      unavailableReason: "agent requires an existing image/upload, but this goal asks for a new logo and no image asset was provided",
+    };
+  }
+  if (/\b(logo|brand kit|brandkit|palette|design token|visual identity|image generat|generate.*image|meme)\b/i.test(serviceText)) {
+    return { body: creativeRequestBody(goal), method: "POST" };
+  }
   const addr = extractGoalAddress(goal);
   const hasAddr = Boolean(addr);
   const symbol = extractGoalSymbol(goal);
@@ -428,9 +507,13 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
     return { output: null, paid: false, error: `unsafe agent endpoint refused: ${endpoint.slice(0, 60)}`, input: {} };
   }
   // Prefer the exact, tested params for this agent; then the proven hardcoded map; then infer.
-  let { body, method } = step.boundParams
+  const mapped = step.boundParams
     ? { body: fillBoundParams(step.boundParams, goal), method: "POST" as const }
-    : getParams(endpoint, goal, missionInputs) ?? await inferParams(step.agent.serviceName, step.agentServiceDescription ?? "", endpoint, goal);
+    : getParams(step, goal, missionInputs) ?? await inferParams(step.agent.serviceName, step.agentServiceDescription ?? "", endpoint, goal);
+  if ("unavailableReason" in mapped && typeof mapped.unavailableReason === "string" && mapped.unavailableReason) {
+    return { output: null, paid: false, error: mapped.unavailableReason, input: mapped.body };
+  }
+  let { body, method } = mapped;
 
   // Dependency-graph inputs override the guessed params: an upstream node's verified output
   // (a resolved token address, a selected symbol) is authoritative for this step.
@@ -449,7 +532,7 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
     return { output: safeJson(res.body), paid: false, input: body };
   }
   if (res.status !== 402) {
-    const repaired = res.status === 400 ? repairParamsFromInputError(body, res.body, goal) : null;
+    const repaired = (res.status === 400 || res.status === 422) ? repairParamsFromInputError(body, res.body, goal) : null;
     if (repaired) {
       body = repaired;
       request = applyRequestParams(endpoint, body, replayMethod);

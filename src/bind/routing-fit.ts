@@ -68,8 +68,17 @@ export function serviceMatchesGoalDomain(goal: string, agent: MarketplaceAgent, 
       return has(/\b(stock|equity|shares?|portfolio|allocation|macro|indices|commodities|market data|research note|backtest)\b/);
     case "security":
       return has(/\b(security|audit|scan|risk|verify|guardrail|preflight|payload|vulnerability|contract auditor|url drain)\b/);
-    case "creative":
-      return has(/\b(logo|brand|image|illustration|avatar|sticker|art|design|manga|music|song|video|generate)\b/);
+    case "creative": {
+      const logoGoal = /\b(logo|brand kit|brand identity|visual identity)\b/.test(goalText);
+      const asksForFreshVisual = /\b(create|design|make|generate|new)\b.*\b(logo|brand|image|illustration|avatar|sticker|art)\b|\b(logo|brand identity|visual identity)\b/.test(goalText);
+      const editOnlyService = /\b(asset_base64|image_base64|mask|watermark|remove watermark|edit-image|image compositor|existing image|source image|original image)\b/.test(exactText);
+      if (asksForFreshVisual && editOnlyService) return false;
+      if (logoGoal) {
+        if (/\b(food|health|skin|personality|bodygraph|video detail|youtube video detail|history|analytics|market|crypto|token|price|trading|linkedin|company profile|scholar|citation|trust verification|risk|meme开发者|keepsake|mint|wallet|portrait|profile|remix|provenance|proof|archive|certificate)\b/.test(exactText)) return false;
+        return exactHas(/\b(logo|brand kit|brandkit|brand identity|visual identity|palette|design token|image generat|generate.*image|illustration)\b/);
+      }
+      return exactHas(/\b(logo|brand|image generat|generate.*image|illustration|avatar|sticker|art|design|manga|music|song|video)\b/);
+    }
     case "website_brand":
       if (buildWebsiteGoal && exactHas(websiteResearchService) && !exactHas(websiteExecutionService)) return false;
       return !has(financeOrCrypto) && !exactHas(credentialGateway) && exactHas(websiteBuildService);

@@ -20,6 +20,9 @@ export interface AgentRep {
   passed: number;     // outputs that cleared verification
   failed: number;     // errored or failed verification
   paidUsdt: number;   // total actually paid to this agent
+  paidMissions: number; // attempts where settlement was confirmed
+  paidPassed: number;   // paid attempts that passed verification
+  paidPassRate: number; // 0..1, only over paidMissions
   passRate: number;   // 0..1
 }
 
@@ -50,17 +53,24 @@ export function agentReputation(): Map<string, AgentRep> {
       // and are keyed by name, newer ones carry both. Keying by id would split the two.
       const key = step.agentName || step.agentId;
       if (!key) continue;
-      const r = reps.get(key) ?? { agentId: step.agentId || key, name: step.agentName || key, missions: 0, passed: 0, failed: 0, paidUsdt: 0, passRate: 0 };
+      const r = reps.get(key) ?? { agentId: step.agentId || key, name: step.agentName || key, missions: 0, passed: 0, failed: 0, paidUsdt: 0, paidMissions: 0, paidPassed: 0, paidPassRate: 0, passRate: 0 };
       if (step.agentId) r.agentId = step.agentId;
       r.missions += 1;
       if (step.status === "passed") r.passed += 1;
       else if (step.status === "failed" || step.status === "errored") r.failed += 1;
       // Only count money that actually moved (a real settlement tx, not "no_payment_needed").
-      if (step.paymentTxHash?.startsWith("0x")) r.paidUsdt += step.feeUsdt ?? 0;
+      if (step.paymentTxHash?.startsWith("0x")) {
+        r.paidMissions += 1;
+        if (step.status === "passed") r.paidPassed += 1;
+        r.paidUsdt += step.feeUsdt ?? 0;
+      }
       reps.set(key, r);
     }
   }
-  for (const r of reps.values()) r.passRate = r.missions ? r.passed / r.missions : 0;
+  for (const r of reps.values()) {
+    r.passRate = r.missions ? r.passed / r.missions : 0;
+    r.paidPassRate = r.paidMissions ? r.paidPassed / r.paidMissions : 0;
+  }
 
   cache = { at: now, reps };
   return reps;
@@ -88,7 +98,7 @@ const MIN_EVIDENCE = 3;
 const FIRE_BELOW = 0.34;
 export function isProvenBad(agentId: string, name?: string): boolean {
   const r = repFor(agentId, name);
-  return !!r && r.missions >= MIN_EVIDENCE && r.passRate < FIRE_BELOW;
+  return !!r && r.paidMissions >= MIN_EVIDENCE && r.paidPassRate < FIRE_BELOW;
 }
 
 export function allReputation(): AgentRep[] {

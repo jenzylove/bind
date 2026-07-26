@@ -25,7 +25,7 @@ const MAX_TOTAL_USDT = 1.5;          // cap the whole quote
 // both pay out AND return real data. Loaded from data/payable-agents.json (re-runnable).
 const FALLBACK_PAYABLE = ["2023", "4413", "3417", "3887", "5222", "4759", "3808", "2080", "4380", "3650", "5221", "2567", "2131", "4848"];
 // Settle-but-unusable agents: kept out even if a probe lists them.
-const EXCLUDE_IDS = new Set(["4215", "3209"]); // AlphaHunter (MCP, no REST data), Clawby (topup)
+const EXCLUDE_IDS = new Set(["4215", "3209", "5421", "6676"]); // AlphaHunter (MCP, no REST data), Clawby (topup), PixelBrief/Synesthesia (dead endpoints)
 
 interface PayableEndpoint { endpoint: string; fee: number; service: string; name: string; tier: string; params?: Record<string, string> | null; }
 function loadPayable(): { ids: Set<string>; endpoints: Map<string, PayableEndpoint> } {

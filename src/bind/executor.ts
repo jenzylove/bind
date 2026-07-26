@@ -670,10 +670,13 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
   const completed = stepResults.filter((r) => r.status === "passed").length;
   // The deliverable: one readable answer synthesized from the verified agent outputs.
   const finalOutput = await synthesizeDeliverable(plan.goal, passedOutputs);
+  const hasDeliverable = completed > 0 && !/^No agent outputs passed verification/i.test(finalOutput);
 
   const execution: BindExecution = {
     executionId, planId: plan.planId, goal: plan.goal, payer,
-    status: completed === stepResults.length ? "completed" : completed > 0 ? "partial" : "failed",
+    // A planned route can be dropped by safety caps, merchant errors, or a better fallback.
+    // If Bind still returns a verified synthesized answer, the buyer got the product.
+    status: hasDeliverable ? "completed" : "failed",
     stepResults, finalOutput,
     totalPaid, totalSteps: stepResults.length, completedSteps: completed,
     createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),

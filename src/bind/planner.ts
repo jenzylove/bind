@@ -298,6 +298,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       estimatedTime: "N/A",
       createdAt: new Date().toISOString(),
       note: selection.declineReason,
+      inputs: req.inputs,
     };
   }
 
@@ -359,6 +360,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
       estimatedTime: "N/A",
       createdAt: new Date().toISOString(),
       note: domainMismatchReason(req.goal),
+      inputs: req.inputs,
     };
   }
 
@@ -445,6 +447,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     priceBreakdown,
     estimatedTime: `~${steps.length * 15} seconds`,
     createdAt: new Date().toISOString(),
+    inputs: req.inputs,
   };
 }
 

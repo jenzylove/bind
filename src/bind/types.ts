@@ -58,6 +58,7 @@ export interface BindPlan {
   estimatedTime: string;
   createdAt: string;
   note?: string;
+  inputs?: Record<string, unknown>;
   /** True for the built-in dependency-graph flagship (step 2 consumes step 1's output). */
   flagship?: boolean;
 }
@@ -134,4 +135,5 @@ export interface PlanRequest {
   goal: string;
   tokenAddress?: string;
   template?: PlanTemplate;
+  inputs?: Record<string, unknown>;
 }

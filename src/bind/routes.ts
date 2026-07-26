@@ -23,6 +23,23 @@ const ALLOW_FREE = process.env.BIND_ALLOW_FREE === "1";
 // availability may have moved, so the buyer must re-plan (audit H6).
 const QUOTE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+function collectInputs(body: any): Record<string, unknown> | undefined {
+  const inputs: Record<string, unknown> = body?.inputs && typeof body.inputs === "object" && !Array.isArray(body.inputs)
+    ? { ...body.inputs }
+    : {};
+  for (const key of ["targetRole", "jobDescription", "resume", "name"]) {
+    if (typeof body?.[key] === "string" && body[key].trim()) inputs[key] = body[key];
+  }
+  if (typeof body?.resumeFileBase64 === "string" && body.resumeFileBase64.trim()) {
+    inputs.resumeFile = {
+      kind: typeof body.resumeFileKind === "string" ? body.resumeFileKind : "pdf",
+      base64: body.resumeFileBase64,
+      mediaType: typeof body.resumeFileMediaType === "string" ? body.resumeFileMediaType : "application/pdf",
+    };
+  }
+  return Object.keys(inputs).length > 0 ? inputs : undefined;
+}
+
 export const bindRouter = Router();
 
 // In-memory cache in front of the file store. Fast path; disk is the durable fallback.
@@ -67,6 +84,7 @@ const planHandler = async (req: Parameters<typeof bindRouter.post>[1] extends an
       goal: body.goal.trim(),
       tokenAddress: body.tokenAddress,
       template: body.template,
+      inputs: collectInputs(body),
     });
 
     plans.set(plan.planId, plan);
@@ -118,7 +136,7 @@ const executeHandler = async (req: any, res: any) => {
   // already moved, so if the mission then never runs, the agent budget goes straight back.
   let refundOnFail: { payer: string; amount: number } | null = null;
   try {
-    const body = req.body as { planId?: string; goal?: string } | undefined;
+    const body = req.body as { planId?: string; goal?: string; inputs?: Record<string, unknown> } | undefined;
     // Settlement handed over by the x402 gate: this buyer already paid on-chain.
     const x402 = res.locals?.x402 as { settled: boolean; txHash?: string; payer?: string; paidUsdt: number } | undefined;
 
@@ -126,7 +144,7 @@ const executeHandler = async (req: any, res: any) => {
     if (!plan && typeof body?.goal === "string" && body.goal.trim()) {
       // Single-call service: a marketplace buyer pays once and sends a goal — Bind plans
       // AND executes inside that one paid call, sized to what they paid.
-      plan = await createPlan({ goal: body.goal.trim() });
+      plan = await createPlan({ goal: body.goal.trim(), inputs: collectInputs(body) });
       if (x402?.settled) trimPlanToBudget(plan, x402.paidUsdt);
       if (plan.steps.length === 0) {
         // Nothing hireable for this goal (or budget) — the buyer already paid, so give it back.

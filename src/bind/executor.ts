@@ -216,13 +216,23 @@ async function payAgentWithCli(endpoint: string, method: "GET" | "POST", body: R
 // Hardcoded, proven parameter mappings for the four agents Bind has tested end-to-end.
 // Returns null when the endpoint is unknown — the caller then asks inferParams to read
 // the service description and build params for that agent (Option D: works with ANY agent).
-function getParams(endpoint: string, goal: string): { body: Record<string, unknown>; method: "POST" | "GET" } | null {
+function getParams(endpoint: string, goal: string, missionInputs?: Record<string, unknown>): { body: Record<string, unknown>; method: "POST" | "GET" } | null {
   const e = endpoint;
   const addr = extractGoalAddress(goal);
   const hasAddr = Boolean(addr);
   const symbol = extractGoalSymbol(goal);
   if (e.includes("pitchook.xyz/v1/x402/agent")) return { body: { prompt: goal }, method: "POST" };
   if (e.includes("brandforge-production-714f.up.railway.app/api/kit")) return { body: { brief: goal, style: goal.toLowerCase().includes("pink") ? "pink, skincare, soft premium" : undefined }, method: "POST" };
+  if (e.includes("resumurai.xyz/x402/tailor")) {
+    const inputs = missionInputs ?? {};
+    const targetRole = String(inputs.targetRole ?? "Business Analyst");
+    const jobDescription = String(inputs.jobDescription ?? `${targetRole} role requiring requirements gathering, stakeholder communication, process analysis, documentation, reporting, data interpretation, and business insight delivery.`);
+    const body: Record<string, unknown> = { jobDescription, options: { includeCoverLetter: true } };
+    if (inputs.resumeFile) body.resumeFile = inputs.resumeFile;
+    else if (typeof inputs.resume === "string") body.resume = inputs.resume;
+    else body.resume = goal;
+    return { body, method: "POST" };
+  }
   // Onchain Data Explorer (Agent 2023) — OKX Official
   if (e.includes("get_chain_info")) return { body: { chainIndex: "196" }, method: "POST" };
   if (e.includes("get_token_info")) return { body: { chainIndex: "196", tokenAddress: addr ?? "0x779ded0c9e1022225f8e0630b35a9b54be713736" }, method: "POST" };
@@ -405,7 +415,7 @@ function isSafeEndpoint(url: string): boolean {
   return true;
 }
 
-async function callAgent(step: BindStep, goal: string, injected?: Record<string, unknown>): Promise<CallResult> {
+async function callAgent(step: BindStep, goal: string, injected?: Record<string, unknown>, missionInputs?: Record<string, unknown>): Promise<CallResult> {
   const endpoint = step.agent.endpoint;
   if (!isSafeEndpoint(endpoint)) {
     return { output: null, paid: false, error: `unsafe agent endpoint refused: ${endpoint.slice(0, 60)}`, input: {} };
@@ -413,7 +423,7 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   // Prefer the exact, tested params for this agent; then the proven hardcoded map; then infer.
   let { body, method } = step.boundParams
     ? { body: fillBoundParams(step.boundParams, goal), method: "POST" as const }
-    : getParams(endpoint, goal) ?? await inferParams(step.agent.serviceName, step.agentServiceDescription ?? "", endpoint, goal);
+    : getParams(endpoint, goal, missionInputs) ?? await inferParams(step.agent.serviceName, step.agentServiceDescription ?? "", endpoint, goal);
 
   // Dependency-graph inputs override the guessed params: an upstream node's verified output
   // (a resolved token address, a selected symbol) is authoritative for this step.
@@ -552,7 +562,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
     const injected = step.inputMap ? resolveInputMap(step.inputMap, nodeOutputs).params : undefined;
 
     try {
-      let call = await callAgent(step, plan.goal, injected);
+      let call = await callAgent(step, plan.goal, injected, plan.inputs);
       let agent = step.agent;
       // Evaluate = structural check, then (only if it passes) an LLM relevance check. An
       // agent that returns well-formed but off-topic data (whale wallets for a football
@@ -581,7 +591,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
           agentServiceDescription: cand.serviceDescription ?? step.fallbackServiceDescription ?? step.agentServiceDescription,
           boundParams: undefined,
         };
-        const fb = await callAgent(fbStep, plan.goal, injected);
+        const fb = await callAgent(fbStep, plan.goal, injected, plan.inputs);
         const fbOutcome = fb.output === null
           ? { passed: false, detail: fb.error ?? "no output" }
           : await evaluateOutput(fbStep, plan.goal, fb.output);

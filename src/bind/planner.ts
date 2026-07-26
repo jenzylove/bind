@@ -288,7 +288,7 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   // The router genuinely has no agent for this goal. Decline honestly instead of hiring
   // keyword-matched agents that would return irrelevant data and charge the buyer. This is
   // the fix for "web-app security audit" pulling three crypto agents.
-  if (selection && selection.picks.length === 0 && selection.declineReason) {
+  if (selection && selection.picks.length === 0 && selection.declineReason && eligible.length === 0) {
     return {
       planId: randomUUID(),
       goal: req.goal,

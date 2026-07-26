@@ -77,7 +77,7 @@ function cheapestService(agent: MarketplaceAgent): MarketplaceService {
 }
 const TOKEN_SYMBOL_STOPWORDS = new Set([
   "AI", "API", "APIS", "CV", "DOC", "DOCX", "PDF", "PPT", "PPTX", "UI", "UX",
-  "CEO", "CTO", "CFO", "COO", "HR", "JD", "KPI", "OKX", "MCP", "A2MCP",
+  "CEO", "CTO", "CFO", "COO", "HR", "JD", "KPI", "ATS", "OKX", "MCP", "A2MCP",
 ]);
 const COMMON_CRYPTO_SYMBOLS = new Set(["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "HYPE", "OKB", "USDT", "USDC"]);
 function goalHasSpecificToken(goal: string): boolean {

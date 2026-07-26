@@ -141,7 +141,10 @@ function goalDiscoveryQueries(goal: string): string[] {
 }
 
 async function fetchGoalAgents(goal: string): Promise<MarketplaceAgent[]> {
-  if (process.env.BIND_DISABLE_CATALOG_REFRESH === "1") return [];
+  // Goal-specific discovery is intentionally separate from the expensive broad catalog
+  // refresh. Production may disable the broad sweep to protect API quota, but Bind still
+  // needs this narrow lookup to find newly-listed niche agents such as CV/resume services.
+  if (process.env.BIND_DISABLE_GOAL_DISCOVERY === "1") return [];
   const queries = goalDiscoveryQueries(goal);
   if (queries.length === 0) return [];
   const seen = new Set<string>();
@@ -298,6 +301,7 @@ function scoreAgentRelevance(agent: MarketplaceAgent, goal: string): number {
     SPORTS: ["sports", "football", "soccer", "match", "team", "league", "cup", "world cup", "fixture", "score"],
     TRAVEL: ["travel", "trip", "flight", "itinerary", "hotel", "visit", "tour", "destination", "things to do", "what to do in"],
     HEALTH: ["health", "diet", "fitness", "nutrition", "food", "calorie", "workout", "medical", "bmi", "wellness"],
+    CAREER: ["cv", "resume", "curriculum vitae", "cover letter", "job application", "career", "linkedin", "ats"],
     LIFE: ["fortune", "astrology", "destiny", "horoscope", "recipe", "game", "rpg", "space", "weather"],
   };
 

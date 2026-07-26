@@ -40,6 +40,7 @@ export function detectGoalDomain(goal: string): GoalDomain {
 
 export function serviceMatchesGoalDomain(goal: string, agent: MarketplaceAgent, service: MarketplaceService): boolean {
   const domain = detectGoalDomain(goal);
+  const goalText = goal.toLowerCase();
   const text = serviceText(agent, service);
   const exactText = exactServiceText(service);
   const has = (re: RegExp) => re.test(text);
@@ -50,6 +51,10 @@ export function serviceMatchesGoalDomain(goal: string, agent: MarketplaceAgent, 
   const actionOnly = /\b(launch|mint|deploy|swap|buy|sell|bridge|stake|withdraw|transfer)\b/;
   const credentialGateway = /\b(bring-your-own-key|api_key|credentials|own provider api keys)\b/;
   const generalTaskService = /\b(plain-language request|managed agent task|task execution|research assistant|web search|summaries|chat completion)\b/;
+  const buildWebsiteGoal = /\b(build|create|design|make|launch)\b.*\b(website|site|landing page|web page|web app|homepage)\b|\b(website|site|landing page|web page|web app|homepage)\b.*\b(brand|business|skincare|product|store)\b/.test(goalText);
+  const websiteResearchService = /\b(aeo|seo|audit|risk|scrape|extract|search|sitemap|crawler|crawlers|llms|url risk|structured feed|links)\b/;
+  const websiteExecutionService = /\b(landing page html|landing page|web design|web design & development|deploy-ready web pages|website builder|complete launch kit|design token|palette|styling apps and sites|managed agent task|plain-language request|task execution)\b/;
+  const websiteBuildService = /\b(landing page html|landing page|web design|web design & development|deploy-ready web pages|website builder|homepage|web page|web app|complete launch kit|design token|palette|styling apps and sites|managed agent task|plain-language request|task execution)\b/;
 
   if (domain === "general") return !exactHas(credentialGateway) && exactHas(generalTaskService);
 
@@ -66,8 +71,8 @@ export function serviceMatchesGoalDomain(goal: string, agent: MarketplaceAgent, 
     case "creative":
       return has(/\b(logo|brand|image|illustration|avatar|sticker|art|design|manga|music|song|video|generate)\b/);
     case "website_brand":
-      return !has(financeOrCrypto) && !has(actionOnly) && !exactHas(credentialGateway) &&
-        exactHas(/\b(website|landing page|web page|web app|homepage|plain-language request|managed agent task|task execution|research assistant|web search|summaries|chat completion)\b/);
+      if (buildWebsiteGoal && exactHas(websiteResearchService) && !exactHas(websiteExecutionService)) return false;
+      return !has(financeOrCrypto) && !exactHas(credentialGateway) && exactHas(websiteBuildService);
     case "social_content":
       return has(/\b(tweet|thread|youtube|shorts|post|viral|caption|content|creator|script)\b/);
     case "travel":

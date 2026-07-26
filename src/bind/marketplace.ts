@@ -16,6 +16,7 @@ const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.
 // spend the API budget on paying agents, not re-listing them.
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const SEARCH_CONCURRENCY = 3;            // gentle on the shared rate limit
+const SEARCH_PAGE_SIZE = 30;              // reach newer niche agents without a huge sweep
 // Last good catalog, persisted to the volume. If the OKX search API is unreachable at
 // boot (it happens), Bind serves this instead of quoting "no compatible agents" for every
 // goal — a marketplace blip must not zero the product.
@@ -77,11 +78,35 @@ const QUERIES = [
   "news", "nft", "prediction", "travel", "content", "A2MCP",
 ];
 
+function mapMarketplaceAgent(a: any): MarketplaceAgent | null {
+  const services = (a.services || []).filter(
+    (s: any) => s.serviceType === "A2MCP" && s.endpoint
+  );
+  if (services.length === 0) return null;
+
+  return {
+    agentId: String(a.agentId),
+    name: a.name || "Unknown",
+    description: (a.profileDescription || "").slice(0, 200),
+    category: (a.categoryCode || ["GENERAL"])[0],
+    rating: a.feedbackRate || a.securityRate || 0,
+    soldCount: a.soldCount || 0,
+    priceMin: a.serviceMinPrice || 0,
+    services: services.map((s: any) => ({
+      serviceId: String(s.serviceId),
+      serviceName: s.serviceName || "Unnamed",
+      serviceType: s.serviceType,
+      feeAmount: parseFloat(s.feeAmount) || 0,
+      endpoint: s.endpoint || "",
+      description: s.serviceDescription || "",
+    })),
+  };
+}
 async function searchOne(query: string): Promise<any[]> {
   try {
     const { stdout } = await execFileAsync(
       ONCHAINOS_PATH,
-      ["agent", "search", "--query", query, "--status", "online", "--page-size", "20"],
+      ["agent", "search", "--query", query, "--status", "online", "--page-size", String(SEARCH_PAGE_SIZE)],
       { timeout: 10000 },
     );
     const parsed = JSON.parse(stdout);
@@ -91,6 +116,47 @@ async function searchOne(query: string): Promise<any[]> {
   }
 }
 
+function goalKeywordQueries(goal: string): string[] {
+  const clean = goal.toLowerCase().replace(/[^a-z0-9$\s-]+/g, " ").replace(/\s+/g, " ").trim();
+  const stop = new Set([
+    "the", "and", "for", "with", "that", "this", "from", "into", "about", "would", "could",
+    "want", "need", "please", "myself", "yourself", "use", "make", "build", "create", "design",
+  ]);
+  const words = clean.split(/\s+/).filter((w) => w.length > 2 && !stop.has(w)).slice(0, 6);
+  return [clean.slice(0, 90), words.join(" "), ...words.slice(0, 3)].filter((q) => q.length >= 3);
+}
+
+function goalDiscoveryQueries(goal: string): string[] {
+  const g = goal.toLowerCase();
+  let domainQueries: string[] = [];
+  if (/\b(build|create|design|make|launch)\b.*\b(website|site|landing page|web page|web app|homepage)\b|\b(website|site|landing page|web page|web app|homepage)\b.*\b(brand|business|skincare|product|store)\b/.test(g)) {
+    domainQueries = ["website", "landing page", "web design", "website builder", "frontend", "brand website", "LaunchOS"];
+  } else if (/\b(cv|resume|curriculum vitae|cover letter|job application|career|linkedin)\b/.test(g)) {
+    domainQueries = ["resume", "CV", "career", "cover letter", "job application", "writing"];
+  } else if (/\b(travel|trip|flight|hotel|itinerary|tourism|visa)\b/.test(g)) {
+    domainQueries = ["travel", "itinerary", "flight", "hotel", "visa"];
+  }
+
+  return [...new Set([...domainQueries, ...goalKeywordQueries(goal)])].slice(0, 10);
+}
+
+async function fetchGoalAgents(goal: string): Promise<MarketplaceAgent[]> {
+  if (process.env.BIND_DISABLE_CATALOG_REFRESH === "1") return [];
+  const queries = goalDiscoveryQueries(goal);
+  if (queries.length === 0) return [];
+  const seen = new Set<string>();
+  const agents: MarketplaceAgent[] = [];
+  for (const query of queries) {
+    for (const raw of await searchOne(query)) {
+      if (seen.has(String(raw.agentId))) continue;
+      const mapped = mapMarketplaceAgent(raw);
+      if (!mapped) continue;
+      seen.add(mapped.agentId);
+      agents.push(mapped);
+    }
+  }
+  return agents;
+}
 // Runs the sweep with bounded concurrency. Previously this was 57 sequential
 // execFileSync calls, which blocked the event loop for ~90s — the whole server (health
 // checks included) froze during a cold plan, which is what aborted client requests.
@@ -106,32 +172,9 @@ async function fetchAllA2McpAgents(): Promise<MarketplaceAgent[]> {
       for (const a of list) {
         if (seenIds.has(String(a.agentId))) continue;
         seenIds.add(String(a.agentId));
-
-        const services = (a.services || []).filter(
-          (s: any) => s.serviceType === "A2MCP" && s.endpoint
-        );
-        if (services.length === 0) continue;
-
-        allAgents.push({
-          agentId: String(a.agentId),
-          name: a.name || "Unknown",
-          description: (a.profileDescription || "").slice(0, 200),
-          category: (a.categoryCode || ["GENERAL"])[0],
-          rating: a.feedbackRate || a.securityRate || 0,
-          soldCount: a.soldCount || 0,
-          priceMin: a.serviceMinPrice || 0,
-          services: services.map((s: any) => ({
-            serviceId: String(s.serviceId),
-            serviceName: s.serviceName || "Unnamed",
-            serviceType: s.serviceType,
-            feeAmount: parseFloat(s.feeAmount) || 0,
-            endpoint: s.endpoint || "",
-            // The service description carries the input-requirements doc ("Input
-            // requirements: ...") — the executor feeds this to inferParams so it can
-            // call ANY agent correctly, not just the four it has hardcoded mappings for.
-            description: s.serviceDescription || "",
-          })),
-        });
+        const mapped = mapMarketplaceAgent(a);
+        if (!mapped) continue;
+        allAgents.push(mapped);
       }
     }
   }
@@ -205,6 +248,7 @@ async function getCatalog(): Promise<MarketplaceAgent[]> {
   const now = Date.now();
   if (catalogCache && now - catalogCache.timestamp < CACHE_TTL_MS) return catalogCache.agents;
   if (process.env.BIND_DISABLE_CATALOG_REFRESH === "1") return catalogCache?.agents ?? [];
+  if (catalogCache && process.env.BIND_DISABLE_BACKGROUND_REFRESH === "1") return catalogCache.agents;
   if (catalogCache) { void startRefresh(); return catalogCache.agents; }
   return startRefresh();
 }
@@ -289,7 +333,9 @@ function scoreAgentRelevance(agent: MarketplaceAgent, goal: string): number {
 
 export async function findMatchingAgentsScored(goal: string): Promise<{ agent: MarketplaceAgent; score: number }[]> {
   const catalog = await getCatalog();
-  return catalog
+  const byId = new Map(catalog.map((agent) => [agent.agentId, agent]));
+  for (const agent of await fetchGoalAgents(goal)) byId.set(agent.agentId, agent);
+  return [...byId.values()]
     .map((agent) => ({ agent, score: scoreAgentRelevance(agent, goal) }))
     .sort((a, b) => b.score - a.score);
 }

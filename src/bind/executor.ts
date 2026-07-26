@@ -173,11 +173,17 @@ async function signPayment(challengeB64: string): Promise<string | null> {
 }
 
 
-function paramArgs(body: Record<string, unknown>): string[] {
+function paramArgs(body: Record<string, unknown>): string[] | null {
   const args: string[] = [];
+  let bytes = 0;
   for (const [key, value] of Object.entries(body)) {
     if (value === undefined || value === null || value === "") continue;
-    args.push("--param", `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`);
+    const rendered = `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`;
+    bytes += Buffer.byteLength(rendered);
+    // Do not pass large files/base64 through process argv. The direct HTTP replay path
+    // already carries the JSON body; CLI fallback is only for small seller params.
+    if (bytes > 24_000) return null;
+    args.push("--param", rendered);
   }
   return args;
 }
@@ -185,6 +191,7 @@ function paramArgs(body: Record<string, unknown>): string[] {
 async function payAgentWithCli(endpoint: string, method: "GET" | "POST", body: Record<string, unknown>, quoted: number): Promise<CallResult> {
   try {
     const params = paramArgs(body);
+    if (!params) return { output: null, paid: false, error: "seller CLI fallback skipped: request body is too large for process arguments", input: body };
     const quote = await execFileAsync(ONCHAINOS_PATH, ["payment", "quote", endpoint, "--method", method, ...params], { timeout: 45000 });
     const q = JSON.parse(quote.stdout);
     const data = q?.data;
@@ -482,6 +489,7 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
 
   const paidRequest = applyRequestParams(endpoint, body, replayMethod);
   let paid = await httpCall(replayMethod, paidRequest.url, paidRequest.body, { "PAYMENT-SIGNATURE": auth });
+  if (paid.status !== 200) paid = await httpCall(replayMethod, paidRequest.url, paidRequest.body, { "X-PAYMENT": auth });
   if (paid.status !== 200) paid = await httpCall(replayMethod, paidRequest.url, paidRequest.body, { "Authorization": `X402 ${auth}` });
 
   if (paid.status !== 200) {

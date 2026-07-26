@@ -173,6 +173,46 @@ async function signPayment(challengeB64: string): Promise<string | null> {
 }
 
 
+function paramArgs(body: Record<string, unknown>): string[] {
+  const args: string[] = [];
+  for (const [key, value] of Object.entries(body)) {
+    if (value === undefined || value === null || value === "") continue;
+    args.push("--param", `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`);
+  }
+  return args;
+}
+
+async function payAgentWithCli(endpoint: string, method: "GET" | "POST", body: Record<string, unknown>, quoted: number): Promise<CallResult> {
+  try {
+    const params = paramArgs(body);
+    const quote = await execFileAsync(ONCHAINOS_PATH, ["payment", "quote", endpoint, "--method", method, ...params], { timeout: 45000 });
+    const q = JSON.parse(quote.stdout);
+    const data = q?.data;
+    const paymentId = data?.paymentId;
+    const selected = data?.candidates?.find((c: any) => c.recommended) ?? data?.candidates?.[0];
+    const selectedIndex = selected?.acceptsIndex ?? 0;
+    const amount = Number(selected?.amount ?? data?.decodedChallenge?.amount ?? 0) / 1e6;
+    const asset = String(data?.accepts?.[selectedIndex]?.asset ?? data?.decodedChallenge?.asset ?? USDT_ASSET_LC).toLowerCase();
+    const allowed = Math.max(quoted * 1.5, 0.002);
+    if (!paymentId) return { output: null, paid: false, error: "CLI quote did not return a payment id", input: body };
+    if (amount > allowed || amount > MAX_ABS_PER_CALL_USDT) {
+      return { output: null, paid: false, error: `overcharge blocked: agent demands $${amount} (quoted $${quoted}, cap $${Math.min(allowed, MAX_ABS_PER_CALL_USDT)})`, input: body };
+    }
+    if (asset && asset !== USDT_ASSET_LC) return { output: null, paid: false, error: `payment asset mismatch: challenge wants ${asset}, not USDT`, input: body };
+
+    const paid = await execFileAsync(ONCHAINOS_PATH, ["payment", "pay", "--payment-id", paymentId, "--selected-index", String(selectedIndex), "--yes", ...params], { timeout: 120000 });
+    const p = JSON.parse(paid.stdout);
+    const receipt = p?.data?.decodedReceipt;
+    const txHash = p?.data?.txHash ?? receipt?.transaction;
+    if (p?.data?.ok === true || p?.data?.status === "success") {
+      return { output: p.data.result ?? {}, paid: true, txHash, input: body };
+    }
+    return { output: null, paid: false, error: p?.data?.error ?? "CLI paid replay failed", input: body };
+  } catch (e) {
+    const err = e as { stdout?: string; stderr?: string; message?: string };
+    return { output: null, paid: false, error: String(err.stdout || err.stderr || err.message || "CLI payment failed").replace(/\s+/g, " ").slice(0, 180), input: body };
+  }
+}
 // Hardcoded, proven parameter mappings for the four agents Bind has tested end-to-end.
 // Returns null when the endpoint is unknown — the caller then asks inferParams to read
 // the service description and build params for that agent (Option D: works with ANY agent).
@@ -435,6 +475,7 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   if (paid.status !== 200) paid = await httpCall(replayMethod, paidRequest.url, paidRequest.body, { "Authorization": `X402 ${auth}` });
 
   if (paid.status !== 200) {
+    if (paid.status === 402) return payAgentWithCli(endpoint, replayMethod, body, quoted);
     return { output: null, paid: false, error: `paid call returned ${paid.status}: ${paid.body.slice(0, 80)}`, input: body };
   }
 

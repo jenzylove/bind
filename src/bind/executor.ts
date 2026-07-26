@@ -301,7 +301,12 @@ function getParams(step: BindStep, goal: string, missionInputs?: Record<string, 
       unavailableReason: "agent requires an existing image/upload, but this goal asks for a new logo and no image asset was provided",
     };
   }
-  if (/\b(logo|brand kit|brandkit|palette|design token|visual identity|image generat|generate.*image|meme)\b/i.test(serviceText)) {
+  if (e.includes("agent-reel-production.up.railway.app/v1/brandkit")) {
+    return { body: { brand: `${extractCreativeName(goal) ?? "Aevri"}: ${goal}`, style: creativeStyle(goal) }, method: "POST" };
+  }
+  if (e.includes("agent-reel-production.up.railway.app/v1/asset")) {
+    return { body: { scene: goal, title: extractCreativeName(goal) ?? "Aevri", subtitle: "YouTube music channel logo direction" }, method: "POST" };
+  }  if (/\b(logo|brand kit|brandkit|palette|design token|visual identity|image generat|generate.*image|meme)\b/i.test(serviceText)) {
     return { body: creativeRequestBody(goal), method: "POST" };
   }
   const addr = extractGoalAddress(goal);

@@ -312,6 +312,26 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
     }
   }
 
+  // Website/brand missions need at least two independent routes when available: a brand/design
+  // specialist plus a managed executor. The AI selector can be conservative and pick only one;
+  // top up from the eligible marketplace list so one flaky agent settlement does not sink the mission.
+  const desiredMinimum = detectGoalDomain(req.goal) === "website_brand" ? Math.min(2, eligible.length) : 0;
+  if (selectedAgents.length < desiredMinimum) {
+    const selectedIds = new Set(selectedAgents.map((agent) => agent.agentId));
+    const usedRoles = new Set(selectedAgents.map((agent) => determineAgentRole(agent, req.goal)));
+    for (const { agent } of eligible) {
+      if (selectedAgents.length >= desiredMinimum) break;
+      if (selectedIds.has(agent.agentId)) continue;
+      const fee = chosenService(agent, req.goal).feeAmount;
+      if (runningTotal + fee > MAX_TOTAL_USDT) continue;
+      const role = determineAgentRole(agent, req.goal);
+      if (usedRoles.has(role) && eligible.some((e) => !selectedIds.has(e.agent.agentId) && determineAgentRole(e.agent, req.goal) !== role)) continue;
+      selectedAgents.push(agent);
+      selectedIds.add(agent.agentId);
+      usedRoles.add(role);
+      runningTotal += fee;
+    }
+  }
   // Heuristic fallback (no AI key, or AI returned nothing): payable-first, role-diverse.
   if (selectedAgents.length === 0) {
     const usedRoles = new Set<string>();

@@ -109,6 +109,36 @@ function applyRequestParams(
   return { url, body: remaining };
 }
 
+function goalFieldValue(name: string, goal: string): unknown {
+  const n = name.toLowerCase();
+  if (["brief", "description", "business", "company", "projectdescription", "prompt", "query", "q", "text", "topic", "mood"].includes(n)) return goal;
+  if (["style", "preferences", "stylepreferences"].includes(n)) return goal.toLowerCase().includes("pink") ? "pink, skincare, soft premium" : "clean, polished, professional";
+  if (["track", "category"].includes(n)) return /\b(crypto|web3|token|defi|wallet|onchain|on-chain)\b/i.test(goal) ? "web3" : "traditional";
+  if (["name", "brand", "brandname"].includes(n)) return goal.toLowerCase().includes("skincare") ? "Pink Skincare Brand" : goal.slice(0, 60);
+  return undefined;
+}
+
+function repairParamsFromInputError(current: Record<string, unknown>, errorBody: string, goal: string): Record<string, unknown> | null {
+  let parsed: any;
+  try { parsed = JSON.parse(errorBody); } catch { return null; }
+  const names = new Set<string>();
+  for (const name of parsed?.requiredAnyOf ?? []) if (typeof name === "string") names.add(name);
+  for (const field of parsed?.fields ?? []) {
+    if (field?.required && typeof field.name === "string") names.add(field.name);
+  }
+  if (names.size === 0) return null;
+
+  const repaired: Record<string, unknown> = { ...current };
+  let changed = false;
+  for (const name of names) {
+    if (repaired[name] !== undefined && repaired[name] !== null && repaired[name] !== "") continue;
+    const value = goalFieldValue(name, goal);
+    if (value === undefined) continue;
+    repaired[name] = value;
+    changed = true;
+  }
+  return changed ? repaired : null;
+}
 async function walletLogin(): Promise<void> {
   // Best-effort: a live session may already exist, in which case a re-login errors
   // harmlessly. Real auth failures surface later as a failed payment sign.
@@ -362,7 +392,16 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
     return { output: safeJson(res.body), paid: false, input: body };
   }
   if (res.status !== 402) {
-    return { output: null, paid: false, error: `HTTP ${res.status}: ${res.body.slice(0, 80)}`, input: body };
+    const repaired = res.status === 400 ? repairParamsFromInputError(body, res.body, goal) : null;
+    if (repaired) {
+      body = repaired;
+      request = applyRequestParams(endpoint, body, replayMethod);
+      res = await httpCall(replayMethod, request.url, request.body);
+      if (res.status === 200) return { output: safeJson(res.body), paid: false, input: body };
+    }
+    if (res.status !== 402) {
+      return { output: null, paid: false, error: `HTTP ${res.status}: ${res.body.slice(0, 80)}`, input: body };
+    }
   }
 
   // 402 — sign and replay. Prefer the raw PAYMENT-REQUIRED header value (already the

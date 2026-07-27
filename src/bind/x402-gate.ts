@@ -79,7 +79,18 @@ export function requireX402(amountBaseUnits: string, description: string) {
       return;
     }
     if (verdict.settled) {
-      const receipt = Buffer.from(JSON.stringify({ success: true, transaction: verdict.txHash })).toString("base64");
+      const receipt = Buffer.from(JSON.stringify({
+        success: true,
+        status: "success",
+        transaction: verdict.txHash,
+        txHash: verdict.txHash,
+        chainId: "196",
+        network: "eip155:196",
+        asset: USDT,
+        amount: String(amountBaseUnits),
+        payer: verdict.payer ?? "",
+        payTo: PAYTO,
+      })).toString("base64");
       res.setHeader("PAYMENT-RESPONSE", receipt);
       res.setHeader("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE");
       // Hand the settlement to the route handler: the buyer HAS paid, and the handler

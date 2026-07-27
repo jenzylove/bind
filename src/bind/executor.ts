@@ -170,6 +170,25 @@ function creativeRequestBody(goal: string): Record<string, unknown> {
   };
 }
 
+function agentReelBrandKitBodies(goal: string): Record<string, unknown>[] {
+  const name = extractCreativeName(goal) ?? "Aevri";
+  const oneSentence = `${name}: ${goal}`;
+  return [
+    { description: oneSentence },
+    { brief: oneSentence },
+    { brand: oneSentence },
+    { name, description: goal },
+    { name, brief: goal, style: creativeStyle(goal) },
+    { brandName: name, description: goal },
+  ];
+}
+
+function repairBodiesForEndpoint(endpoint: string, goal: string, current: Record<string, unknown>): Record<string, unknown>[] {
+  if (endpoint.includes("agent-reel-production.up.railway.app/v1/brandkit")) {
+    return agentReelBrandKitBodies(goal).filter((body) => JSON.stringify(body) !== JSON.stringify(current));
+  }
+  return [];
+}
 function hasProvidedImageInput(inputs?: Record<string, unknown>): boolean {
   if (!inputs) return false;
   return ["asset_base64", "assetBase64", "image_base64", "imageBase64", "image", "imageUrl", "assetUrl"]
@@ -302,11 +321,12 @@ function getParams(step: BindStep, goal: string, missionInputs?: Record<string, 
     };
   }
   if (e.includes("agent-reel-production.up.railway.app/v1/brandkit")) {
-    return { body: { brand: `${extractCreativeName(goal) ?? "Aevri"}: ${goal}`, style: creativeStyle(goal) }, method: "POST" };
+    return { body: agentReelBrandKitBodies(goal)[0], method: "POST" };
   }
   if (e.includes("agent-reel-production.up.railway.app/v1/asset")) {
     return { body: { scene: goal, title: extractCreativeName(goal) ?? "Aevri", subtitle: "YouTube music channel logo direction" }, method: "POST" };
-  }  if (/\b(logo|brand kit|brandkit|palette|design token|visual identity|image generat|generate.*image|meme)\b/i.test(serviceText)) {
+  }
+  if (/\b(logo|brand kit|brandkit|palette|design token|visual identity|image generat|generate.*image|meme)\b/i.test(serviceText)) {
     return { body: creativeRequestBody(goal), method: "POST" };
   }
   const addr = extractGoalAddress(goal);
@@ -575,14 +595,28 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   const auth = await signPayment(challengeB64);
   if (!auth) return { output: null, paid: false, error: "payment signing failed", input: body };
 
-  const paidRequest = applyRequestParams(endpoint, body, replayMethod);
-  let paid = await httpCall(replayMethod, paidRequest.url, paidRequest.body, { "PAYMENT-SIGNATURE": auth });
-  if (paid.status !== 200) paid = await httpCall(replayMethod, paidRequest.url, paidRequest.body, { "X-PAYMENT": auth });
-  if (paid.status !== 200) paid = await httpCall(replayMethod, paidRequest.url, paidRequest.body, { "Authorization": `X402 ${auth}` });
+  let paidInput = body;
+  const replayWithBody = async (candidateBody: Record<string, unknown>): Promise<HttpResult> => {
+    const candidateRequest = applyRequestParams(endpoint, candidateBody, replayMethod);
+    let candidate = await httpCall(replayMethod, candidateRequest.url, candidateRequest.body, { "PAYMENT-SIGNATURE": auth });
+    if (candidate.status !== 200) candidate = await httpCall(replayMethod, candidateRequest.url, candidateRequest.body, { "X-PAYMENT": auth });
+    if (candidate.status !== 200) candidate = await httpCall(replayMethod, candidateRequest.url, candidateRequest.body, { "Authorization": `X402 ${auth}` });
+    return candidate;
+  };
+
+  let paid = await replayWithBody(body);
+  if (paid.status !== 200 && (paid.status === 400 || paid.status === 422)) {
+    for (const candidateBody of repairBodiesForEndpoint(endpoint, goal, body)) {
+      const retry = await replayWithBody(candidateBody);
+      paid = retry;
+      paidInput = candidateBody;
+      if (retry.status === 200 || retry.status === 402) break;
+    }
+  }
 
   if (paid.status !== 200) {
-    if (paid.status === 402) return payAgentWithCli(endpoint, replayMethod, body, quoted);
-    return { output: null, paid: false, error: `paid call returned ${paid.status}: ${paid.body.slice(0, 80)}`, input: body };
+    if (paid.status === 402) return payAgentWithCli(endpoint, replayMethod, paidInput, quoted);
+    return { output: null, paid: false, error: `paid call returned ${paid.status}: ${paid.body.slice(0, 220)}`, input: paidInput };
   }
 
   // Got data. Confirm the payment settled on-chain before calling it "paid".
@@ -590,7 +624,7 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   if (settlement && !settlement.settled) {
     return { output: null, paid: false, error: "payment did not settle on-chain (success=false)", input: body };
   }
-  return { output: safeJson(paid.body), paid: true, txHash: settlement?.txHash, input: body };
+  return { output: safeJson(paid.body), paid: true, txHash: settlement?.txHash, input: paidInput };
 }
 
 function safeJson(text: string): unknown {

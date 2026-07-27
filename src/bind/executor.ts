@@ -174,12 +174,15 @@ function agentReelBrandKitBodies(goal: string): Record<string, unknown>[] {
   const name = extractCreativeName(goal) ?? "Aevri";
   const oneSentence = `${name}: ${goal}`;
   return [
+    { query: oneSentence },
+    { q: oneSentence },
     { description: oneSentence },
     { brief: oneSentence },
     { brand: oneSentence },
+    { name, query: goal },
     { name, description: goal },
     { name, brief: goal, style: creativeStyle(goal) },
-    { brandName: name, description: goal },
+    { brandName: name, query: goal },
   ];
 }
 

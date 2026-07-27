@@ -144,6 +144,20 @@ app.get("/bind/_login_poll_9f3x", async (req, res) => {
   const after = await ocCall(["wallet", "addresses"]);
   res.json({ result, walletNow: after });
 });
+// TEMP: dump Bind's actual marketplace tasks/orders from the server (logged in as #4735),
+// so we can see why buyer-completed tasks aren't registering as sales. Read-only.
+app.get("/bind/_diag_tasks_9f3x", async (req, res) => {
+  const jobId = String(req.query.job || "");
+  const out: Record<string, unknown> = {
+    active_asp: await ocCall(["agent", "active-tasks", "--role", "asp"]),
+    my_tasks_asp: await ocCall(["agent", "tasks", "--agent-id", "4735"]),
+    accepted: await ocCall(["agent", "tasks", "--status", "accepted", "--agent-id", "4735"]),
+    complete: await ocCall(["agent", "tasks", "--status", "complete", "--agent-id", "4735"]),
+    claimable: await ocCall(["agent", "asp-claimable", "--agent-id", "4735"]),
+  };
+  if (jobId) out.job_detail = await ocCall(["agent", "common", "context", jobId, "--role", "asp", "--agent-id", "4735"]);
+  res.json(out);
+});
 
 
 // Status badge for Bind executions — reflects the real execution outcome.

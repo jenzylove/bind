@@ -14,6 +14,7 @@ import { loadExecution } from "./bind/store.js";
 import { warmCatalog } from "./bind/marketplace.js";
 import { renderMissionPage } from "./bind/mission-page.js";
 import { scheduleAutoprobe } from "./bind/autoprobe.js";
+import { scheduleA2AWorker } from "./bind/a2a-worker.js";
 import { renderAgentPage, scoreColor, scoreLabel } from "./bind/agent-page.js";
 import { agentEvidence } from "./bind/reputation.js";
 
@@ -221,6 +222,8 @@ const server = app.listen(config.port, () => {
     .catch((e) => console.warn(`[bind] catalog warm failed (non-fatal): ${(e as Error).message}`));
   // Grow the crew while we sleep: budget-capped nightly payability probe.
   scheduleAutoprobe();
+  // A2A task worker: apply to + deliver marketplace tasks (off unless BIND_A2A=1).
+  scheduleA2AWorker();
 });
 
 process.on("SIGINT", () => server.close(() => process.exit(0)));

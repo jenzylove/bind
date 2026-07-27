@@ -300,10 +300,11 @@ async function payAgentWithCli(endpoint: string, method: "GET" | "POST", body: R
     if (p?.data?.ok === true || p?.data?.status === "success") {
       return { output: p.data.result ?? {}, paid: true, txHash, input: body };
     }
-    return { output: null, paid: false, error: p?.data?.error ?? "CLI paid replay failed", input: body };
+    const detail = JSON.stringify(p?.data?.result ?? p?.data ?? p).replace(/\s+/g, " ").slice(0, 800);
+    return { output: null, paid: false, error: p?.data?.error ? `${p.data.error}: ${detail}` : `CLI paid replay failed: ${detail}`, input: body };
   } catch (e) {
     const err = e as { stdout?: string; stderr?: string; message?: string };
-    return { output: null, paid: false, error: String(err.stdout || err.stderr || err.message || "CLI payment failed").replace(/\s+/g, " ").slice(0, 180), input: body };
+    return { output: null, paid: false, error: String(err.stdout || err.stderr || err.message || "CLI payment failed").replace(/\s+/g, " ").slice(0, 800), input: body };
   }
 }
 // Hardcoded, proven parameter mappings for the four agents Bind has tested end-to-end.
@@ -604,10 +605,19 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
     return candidate;
   };
 
+  const schemaFailures: string[] = [];
+  const rememberFailure = (response: HttpResult, candidateBody: Record<string, unknown>): void => {
+    if (response.status === 400 || response.status === 422) {
+      schemaFailures.push(`HTTP ${response.status} for ${JSON.stringify(candidateBody)} => ${response.body.slice(0, 260)}`);
+    }
+  };
+
   let paid = await replayWithBody(body);
+  rememberFailure(paid, body);
   if (paid.status !== 200 && (paid.status === 400 || paid.status === 422)) {
     for (const candidateBody of repairBodiesForEndpoint(endpoint, goal, body)) {
       const retry = await replayWithBody(candidateBody);
+      rememberFailure(retry, candidateBody);
       paid = retry;
       paidInput = candidateBody;
       if (retry.status === 200 || retry.status === 402) break;
@@ -615,6 +625,9 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   }
 
   if (paid.status !== 200) {
+    if (schemaFailures.length > 0) {
+      return { output: null, paid: false, error: `seller schema rejected paid replay: ${schemaFailures.join(" | ").slice(0, 900)}`, input: paidInput };
+    }
     if (paid.status === 402) return payAgentWithCli(endpoint, replayMethod, paidInput, quoted);
     return { output: null, paid: false, error: `paid call returned ${paid.status}: ${paid.body.slice(0, 220)}`, input: paidInput };
   }

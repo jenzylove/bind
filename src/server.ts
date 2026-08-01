@@ -2,21 +2,21 @@
 // Built on x402 payment, inter-step verification, and on-chain anchoring
 import express from "express";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { lstatSync, mkdirSync, symlinkSync, readdirSync, renameSync, rmSync } from "node:fs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { cpSync, existsSync, lstatSync, mkdirSync, readlinkSync, renameSync, rmSync, symlinkSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
 import { config, isConfiguredForPayment } from "./config.js";
-import { requirePayment } from "./x402.js";
 import { bindRouter } from "./bind/routes.js";
 import { renderBadge, renderScoreBadge } from "./badge.js";
 import { loadExecution } from "./bind/store.js";
 import { warmCatalog } from "./bind/marketplace.js";
-import { renderMissionPage } from "./bind/mission-page.js";
 import { scheduleAutoprobe } from "./bind/autoprobe.js";
 import { scheduleA2AWorker } from "./bind/a2a-worker.js";
 import { renderAgentPage, scoreColor, scoreLabel } from "./bind/agent-page.js";
 import { agentEvidence } from "./bind/reputation.js";
+import { reconcilePaymentClaimsOnStartup } from "./bind/payment-reconciliation.js";
+import { refundExactBaseUnits } from "./bind/refund.js";
+import { recoverStalePaymentClaimLocks } from "./bind/payment-claims.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "..", "public");
@@ -40,9 +40,16 @@ const SERVICE = {
   version: "0.1.0",
 };
 
-// Serve the web demo UI. Both /app and /bind/app resolve to the same page
-// (there is no separate app.html — pointing /app here fixes a 404).
-app.get(["/app", "/bind/app"], (_req, res) => {
+app.use((req, res, next) => {
+  res.setHeader("Referrer-Policy", "no-referrer");
+  if (req.accepts(["html", "json"]) === "html" || req.path.endsWith(".html")) {
+    res.setHeader("Cache-Control", "private, no-store");
+  }
+  next();
+});
+
+// Serve the web demo UI. /mission is the hard-pinned product and share target.
+app.get(["/app", "/bind/app", "/mission"], (_req, res) => {
   res.sendFile(join(PUBLIC_DIR, "bind.html"));
 });
 
@@ -112,55 +119,7 @@ app.use(["/bind/plan", "/bind/execute", "/bind/quote", "/bind/mission"], (req, r
 // Bind — orchestrator routes
 app.use("/bind", bindRouter);
 
-// TEMPORARY session-admin endpoints (secret path). Let us log the DEPLOYED server's
-// onchainos wallet in headlessly: init returns a login URL the operator completes in a
-// browser; poll captures the resulting session (persisted to the volume). Remove after use.
-const OC_BIN = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
-const ocRun = promisify(execFile);
-const ocCall = async (args: string[]) => {
-  try { const { stdout } = await ocRun(OC_BIN, args, { timeout: 120000 }); return { ok: true, out: String(stdout).slice(0, 800) }; }
-  catch (e) { const x = e as { stdout?: string; stderr?: string; message?: string }; return { ok: false, err: String(x.stdout || x.stderr || x.message || "").replace(/\s+/g, " ").slice(0, 800) }; }
-};
-
-app.get("/bind/_diag_wallet_9f3x", async (_req, res) => {
-  res.json({
-    bin: OC_BIN,
-    envPresent: { OKX_API_KEY: !!process.env.OKX_API_KEY, OKX_SECRET_KEY: !!process.env.OKX_SECRET_KEY, OKX_PASSPHRASE: !!process.env.OKX_PASSPHRASE },
-    version: await ocCall(["--version"]),
-    status: await ocCall(["wallet", "status"]),
-    addresses: await ocCall(["wallet", "addresses"]),
-  });
-});
-// Step 1: mint a login URL (operator opens it in a browser and signs in).
-app.get("/bind/_login_init_9f3x", async (_req, res) => {
-  res.json(await ocCall(["wallet", "login", "--phase", "init"]));
-});
-// Step 2: after completing the browser sign-in, capture + persist the session.
-app.get("/bind/_login_poll_9f3x", async (req, res) => {
-  const sid = String(req.query.sid || "");
-  const args = ["wallet", "login", "--phase", "poll"];
-  if (sid) args.push("--session-id", sid);
-  const result = await ocCall(args);
-  const after = await ocCall(["wallet", "addresses"]);
-  res.json({ result, walletNow: after });
-});
-// TEMP: dump Bind's actual marketplace tasks/orders from the server (logged in as #4735),
-// so we can see why buyer-completed tasks aren't registering as sales. Read-only.
-app.get("/bind/_diag_tasks_9f3x", async (req, res) => {
-  const jobId = String(req.query.job || "");
-  const out: Record<string, unknown> = {
-    active_asp: await ocCall(["agent", "active-tasks", "--role", "asp"]),
-    my_tasks_asp: await ocCall(["agent", "tasks", "--agent-id", "4735"]),
-    accepted: await ocCall(["agent", "tasks", "--status", "accepted", "--agent-id", "4735"]),
-    complete: await ocCall(["agent", "tasks", "--status", "complete", "--agent-id", "4735"]),
-    claimable: await ocCall(["agent", "asp-claimable", "--agent-id", "4735"]),
-  };
-  if (jobId) out.job_detail = await ocCall(["agent", "common", "context", jobId, "--role", "asp", "--agent-id", "4735"]);
-  res.json(out);
-});
-
-
-// Status badge for Bind executions — reflects the real execution outcome.
+// Status badge for Bind executions, reflects the recorded execution outcome.
 app.get("/badge/:executionId.svg", (req, res) => {
   const exec = loadExecution(req.params.executionId);
   const state =
@@ -169,7 +128,7 @@ app.get("/badge/:executionId.svg", (req, res) => {
     : exec.status === "partial" ? "partial"
     : exec.status === "running" ? "running"
     : "fail";
-  res.type("image/svg+xml").set("Cache-Control", "no-cache").send(renderBadge(state));
+  res.type("image/svg+xml").set("Cache-Control", "private, no-store").send(renderBadge(state));
 });
 
 // Seller moat: a live, embeddable score badge for any marketplace agent, earned on paid
@@ -189,43 +148,74 @@ app.get("/a/:agentId", (req, res) => {
   res.type("html").send(renderAgentPage(id, rep, evidence, config.publicBaseUrl));
 });
 
-// Public mission page: the goal, the crew, every payment and verification, the refund,
-// and the on-chain anchor — a shareable proof artifact for every mission.
-app.get("/m/:executionId", (req, res) => {
-  const exec = loadExecution(req.params.executionId);
-  if (!exec) {
-    res.status(404).type("html").send("<body style='background:#16120b;color:#e7ddc7;font-family:Georgia,serif;text-align:center;padding-top:80px'><h2>No mission with that id.</h2><a style='color:#c8a45a' href='/'>Back to Bind</a></body>");
-    return;
-  }
-  res.type("html").send(renderMissionPage(exec));
-});
-
 // Persist onchainos's session dir (~/.onchainos) onto the Railway volume, so a wallet we
 // log in ONCE survives redeploys and restarts (the root cause of the server running with
 // no logged-in wallet: an ephemeral container filesystem loses the session every deploy).
 function persistOnchainosSession(): void {
-  try {
-    const home = process.env.HOME || process.env.USERPROFILE || "/root";
-    const ocDir = join(home, ".onchainos");
-    const persistDir = join(process.env.BIND_DATA_DIR || "/data", "onchainos-home");
-    mkdirSync(persistDir, { recursive: true });
-    const st = lstatSync(ocDir, { throwIfNoEntry: false });
-    if (!st) {
-      symlinkSync(persistDir, ocDir);
-    } else if (!st.isSymbolicLink()) {
-      // Move any existing session files onto the volume, then replace the dir with a symlink.
-      for (const f of readdirSync(ocDir)) {
-        try { renameSync(join(ocDir, f), join(persistDir, f)); } catch { /* keep going */ }
-      }
-      rmSync(ocDir, { recursive: true, force: true });
-      symlinkSync(persistDir, ocDir);
+  const home = process.env.HOME || process.env.USERPROFILE || "/root";
+  const ocDir = join(home, ".onchainos");
+  const persistDir = join(process.env.BIND_DATA_DIR || "/data", "onchainos-home");
+  mkdirSync(dirname(persistDir), { recursive: true, mode: 0o700 });
+  const source = lstatSync(ocDir, { throwIfNoEntry: false });
+
+  if (!source) {
+    mkdirSync(persistDir, { recursive: true, mode: 0o700 });
+    symlinkSync(persistDir, ocDir);
+  } else if (source.isSymbolicLink()) {
+    const actualTarget = resolve(dirname(ocDir), readlinkSync(ocDir));
+    if (actualTarget !== resolve(persistDir)) {
+      throw new Error(`wallet session symlink targets ${actualTarget}, expected ${resolve(persistDir)}`);
     }
-    console.log(`[bind] onchainos session persisted -> ${persistDir}`);
-  } catch (e) {
-    console.warn(`[bind] session-persist setup failed (non-fatal): ${(e as Error).message}`);
+  } else if (source.isDirectory()) {
+    if (existsSync(persistDir)) {
+      throw new Error("wallet session exists in both ephemeral and persistent storage; refusing destructive merge");
+    }
+    const staging = `${persistDir}.migrate-${randomUUID()}`;
+    const backup = `${ocDir}.migrate-${randomUUID()}`;
+    try {
+      cpSync(ocDir, staging, { recursive: true, errorOnExist: true, preserveTimestamps: true });
+      renameSync(staging, persistDir);
+      renameSync(ocDir, backup);
+      try {
+        symlinkSync(persistDir, ocDir);
+      } catch (error) {
+        renameSync(backup, ocDir);
+        throw error;
+      }
+      rmSync(backup, { recursive: true, force: true });
+    } catch (error) {
+      rmSync(staging, { recursive: true, force: true });
+      throw error;
+    }
+  } else {
+    throw new Error("wallet session path is neither a directory nor the expected symlink");
   }
+  console.log(`[bind] onchainos session persisted -> ${persistDir}`);
 }
 persistOnchainosSession();
+
+const recoveredPaymentLocks = recoverStalePaymentClaimLocks();
+if (recoveredPaymentLocks > 0) console.log(`[bind] recovered stale payment claim locks=${recoveredPaymentLocks}`);
+
+const paymentReconciliation = await reconcilePaymentClaimsOnStartup(
+  (executionId) => loadExecution(executionId),
+  undefined,
+  async (claim) => {
+    const refund = await refundExactBaseUnits(
+      claim.amountBaseUnits ?? "0",
+      claim.payer,
+      `orphan-custody:${claim.key}`,
+      { tokenAddress: claim.token, senderAddress: claim.sender },
+    );
+    if (refund.state === "confirmed") return { state: "confirmed" as const, txHash: refund.txHash };
+    if (refund.state === "submitted") return { state: "submitted" as const, txHash: refund.txHash };
+    return { state: "failed" as const, reason: refund.reason ?? refund.state };
+  },
+);
+console.log(`[bind] payment claim reconciliation inspected=${paymentReconciliation.inspected} blocked=${paymentReconciliation.blockedForReconciliation} completed=${paymentReconciliation.completedFromDurableExecution} orphanRefunded=${paymentReconciliation.refundedOrphanCustody}`);
+if (paymentReconciliation.blockedForReconciliation > 0) {
+  throw new Error("unresolved payment liabilities block startup; reconcile durable claims before accepting new missions");
+}
 
 const server = app.listen(config.port, () => {
   console.log(`[bind] listening on :${config.port}  (paymentConfigured=${isConfiguredForPayment()})`);

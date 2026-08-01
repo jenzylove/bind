@@ -153,8 +153,6 @@ footer.foot { max-width: none; background: var(--paper); color: var(--paper-mute
   .mock-dot { animation: pulseDot 2.3s ease-in-out infinite; }
   .screen-tab { transition: transform .18s ease, border-color .18s ease; }
   .screen-tab:hover { transform: translateY(-2px); border-color: #18d7e666; }
-  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .65s ease, transform .65s cubic-bezier(.2,.8,.2,1); }
-  .reveal.visible { opacity: 1; transform: translateY(0); }
   .deploy-table div:not(.head) { transition: transform .18s ease, background .18s ease; }
   .deploy-table div:not(.head):hover { transform: translateX(4px); background: #1b202c; }
 }

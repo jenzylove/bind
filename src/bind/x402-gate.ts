@@ -13,11 +13,12 @@
 import type { Request, Response, NextFunction } from "express";
 import { config } from "../config.js";
 import { settleIncomingPayment } from "./x402-settle.js";
+import { paymentIntentNonce } from "./payment-intent.js";
 
 const USDT = config.usdtAsset;      // 0x779ded…736
 const PAYTO = config.payToAddress;  // Bind's agentic wallet
 
-export function x402Challenge(amountBaseUnits: string, resourceUrl: string, description: string) {
+export function x402Challenge(amountBaseUnits: string, resourceUrl: string, description: string, intentNonce: string) {
   return {
     x402Version: 2,
     error: "Payment required",
@@ -33,7 +34,7 @@ export function x402Challenge(amountBaseUnits: string, resourceUrl: string, desc
         decimals: 6,
         payTo: PAYTO,
         maxTimeoutSeconds: 300,
-        extra: { name: "USD₮0", version: "1", decimals: 6 },
+        extra: { name: "USD₮0", version: "1", decimals: 6, nonce: intentNonce, requestIntent: intentNonce },
       },
     ],
   };
@@ -48,9 +49,9 @@ function paymentHeader(req: Request): string | null {
   return null;
 }
 
-function send402(req: Request, res: Response, amountBaseUnits: string, description: string, extraError?: string): void {
-  const url = `${config.publicBaseUrl}${req.originalUrl.split("?")[0]}`;
-  const challenge = x402Challenge(amountBaseUnits, url, description);
+function send402(req: Request, res: Response, amountBaseUnits: string, description: string, intentNonce: string, extraError?: string): void {
+  const url = `${config.publicBaseUrl}${req.originalUrl}`;
+  const challenge = x402Challenge(amountBaseUnits, url, description, intentNonce);
   if (extraError) (challenge as any).error = extraError;
   const b64 = Buffer.from(JSON.stringify(challenge)).toString("base64");
   res.setHeader("PAYMENT-REQUIRED", b64);
@@ -64,18 +65,20 @@ function send402(req: Request, res: Response, amountBaseUnits: string, descripti
  * on-chain before the handler runs — presence of a header is no longer proof of payment.
  * The settlement result is echoed in the standard payment-response header.
  */
-export function requireX402(amountBaseUnits: string, description: string) {
+export function requireX402(amountBaseUnits: string, description: string, amountPolicy: "exact" | "minimum" = "exact") {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const intentNonce = paymentIntentNonce(req.originalUrl, req.body ?? {});
     // Never settle on GET: those routes exist so validators can fetch the challenge. A
     // paid GET would charge the buyer for a 405 — challenge-only keeps probes free.
-    if (req.method === "GET") { send402(req, res, amountBaseUnits, description); return; }
+    if (req.method === "GET") { send402(req, res, amountBaseUnits, description, intentNonce); return; }
 
     const credential = paymentHeader(req);
-    if (!credential) { send402(req, res, amountBaseUnits, description); return; }
+    if (!credential) { send402(req, res, amountBaseUnits, description, intentNonce); return; }
 
-    const verdict = await settleIncomingPayment(credential, amountBaseUnits);
+    const resource = `${config.publicBaseUrl}${req.originalUrl}`;
+    const verdict = await settleIncomingPayment(credential, { amountBaseUnits, amountPolicy, resource, intentNonce });
     if (!verdict.ok) {
-      send402(req, res, amountBaseUnits, description, `Payment rejected: ${verdict.reason}`);
+      send402(req, res, amountBaseUnits, description, intentNonce, `Payment rejected: ${verdict.reason}`);
       return;
     }
     if (verdict.settled) {
@@ -87,7 +90,7 @@ export function requireX402(amountBaseUnits: string, description: string) {
         chainId: "196",
         network: "eip155:196",
         asset: USDT,
-        amount: String(amountBaseUnits),
+        amount: verdict.valueBaseUnits ?? String(amountBaseUnits),
         payer: verdict.payer ?? "",
         payTo: PAYTO,
       })).toString("base64");
@@ -99,7 +102,12 @@ export function requireX402(amountBaseUnits: string, description: string) {
         settled: true,
         txHash: verdict.txHash,
         payer: verdict.payer,
-        paidUsdt: Number(amountBaseUnits) / 1e6,
+        paidUsdt: Number(verdict.valueBaseUnits ?? amountBaseUnits) / 1e6,
+        amountBaseUnits: verdict.valueBaseUnits ?? String(amountBaseUnits),
+        chain: "eip155:196" as const,
+        token: USDT.toLowerCase(),
+        recipient: PAYTO.toLowerCase(),
+        source: "eip3009" as const,
       };
     }
     next();

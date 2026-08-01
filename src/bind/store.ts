@@ -1,27 +1,67 @@
-// File-backed persistence for plans and executions. The in-memory Maps in routes.ts
-// stay as a fast cache, but a plan created just before a container restart is no longer
-// lost: /execute and /status fall back to disk. On a deploy with a persistent volume
-// mounted at the data dir, these also survive redeploys.
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+// File-backed persistence for plans and executions. Paid paths depend on these writes being
+// durable before side effects, so writes are atomic, fsynced, and fail visibly.
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { BindPlan, BindExecution } from "./types.js";
 
 const DIR = process.env.BIND_DATA_DIR ?? "data/bind";
 const UUID = /^[0-9a-fA-F-]{36}$/;
 
-function persist(kind: string, id: string, obj: unknown): void {
-  try {
-    mkdirSync(join(DIR, kind), { recursive: true });
-    writeFileSync(join(DIR, kind, `${id}.json`), JSON.stringify(obj));
-  } catch { /* disk unavailable — memory cache still serves the common path */ }
-}
-function read<T>(kind: string, id: string): T | null {
-  if (!UUID.test(id)) return null;
-  const p = join(DIR, kind, `${id}.json`);
-  try { return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as T) : null; } catch { return null; }
+function syncDirectory(path: string): void {
+  const fd = openSync(dirname(path), "r");
+  try { fsyncSync(fd); } finally { closeSync(fd); }
 }
 
-export function savePlan(p: BindPlan): void { persist("plans", p.planId, p); }
+function persist(kind: string, id: string, obj: unknown): void {
+  let serialized: string;
+  try {
+    const json = JSON.stringify(obj);
+    if (json === undefined) throw new Error("JSON serialization returned undefined");
+    serialized = `${json}\n`;
+  } catch (error) {
+    throw new Error(`could not serialize durable ${kind} record: ${(error as Error).message}`);
+  }
+
+  const directory = join(DIR, kind);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const path = join(directory, `${id}.json`);
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  let fd: number | undefined;
+  try {
+    fd = openSync(temporary, "wx", 0o600);
+    writeFileSync(fd, serialized, "utf8");
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = undefined;
+    renameSync(temporary, path);
+    syncDirectory(path);
+  } catch (error) {
+    if (fd !== undefined) {
+      try { closeSync(fd); } catch { /* preserve original persistence error */ }
+    }
+    try { unlinkSync(temporary); } catch { /* temp may not exist or rename already succeeded */ }
+    throw error;
+  }
+}
+
+function read<T>(kind: string, id: string): T | null {
+  if (!UUID.test(id)) return null;
+  const path = join(DIR, kind, `${id}.json`);
+  try { return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as T) : null; } catch { return null; }
+}
+
+export function savePlan(plan: BindPlan): void { persist("plans", plan.planId, plan); }
 export function loadPlan(id: string): BindPlan | null { return read<BindPlan>("plans", id); }
-export function saveExecution(e: BindExecution): void { persist("executions", e.executionId, e); }
+export function saveExecution(execution: BindExecution): void { persist("executions", execution.executionId, execution); }
 export function loadExecution(id: string): BindExecution | null { return read<BindExecution>("executions", id); }

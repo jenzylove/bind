@@ -13,6 +13,7 @@ import { settleAuthorization } from "./x402-settle.js";
 import { refundExactBaseUnits, refundUnspent, reconcileRefundEvidence, finalizeRefundAttestationClaim, type RefundResult } from "./refund.js";
 import { allReputation, ledgerDetail } from "./reputation.js";
 import { serviceReliability } from "./service-reliability.js";
+import { aggregateAgentPerformance, readDurableAgentOperationEvents, summarizeAgentPerformance } from "./agent-performance.js";
 import { requireX402 } from "./x402-gate.js";
 import { paymentIntentNonce } from "./payment-intent.js";
 import { config } from "../config.js";
@@ -667,6 +668,44 @@ bindRouter.get("/agents", (_req, res) => {
       passRate: Math.round(r.passRate * 100) / 100,
       feesWithSettlementReferenceUsdt: Math.round(r.feesWithSettlementReferenceUsdt * 1e6) / 1e6,
       trackRecordUrl: `${config.publicBaseUrl}/a/${r.agentId}`,
+    })),
+  });
+});
+
+// Evidence-backed operational metrics. Only explicit v1 events generated while committing a
+// terminal execution count; old records are not reinterpreted and no catalog/promotional
+// totals are mixed in. "excluded" is an internal routing policy, never a marketplace ban.
+bindRouter.get("/performance", (_req, res) => {
+  const events = readDurableAgentOperationEvents();
+  const agents = aggregateAgentPerformance(events);
+  res.json({
+    schema: "bind.agent-performance.v1",
+    note: "Counts come only from durable bind.agent-operation.v1 evidence. Legacy records are not inferred. Completed means verification passed; failedVerification means verification ran and failed; timeout and noResult never enter the rating denominator. Removed from routing is Bind-internal exclusion, not a marketplace ban.",
+    metrics: summarizeAgentPerformance(events),
+    agents: agents.map((agent) => ({
+      agentId: agent.agentId,
+      name: agent.agentName,
+      testedOperations: agent.testedOperations,
+      availability: {
+        latest: agent.latestAvailability,
+        onlineObservations: agent.onlineObservations,
+        offlineObservations: agent.offlineObservations,
+        unknownObservations: agent.availabilityUnknown,
+      },
+      outcomes: {
+        completed: agent.verifiedCompleted,
+        failedVerification: agent.verificationFailed,
+        timedOut: agent.timedOut,
+        noResult: agent.noResult,
+      },
+      rating: {
+        verifiedOperations: agent.verifiedOperations,
+        verifiedPassRate: agent.verifiedPassRate,
+      },
+      routing: {
+        status: agent.routingEligibility,
+        reason: agent.routingReason,
+      },
     })),
   });
 });

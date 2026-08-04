@@ -84,6 +84,31 @@ export interface AgentAttempt {
   error?: string;
 }
 
+/**
+ * One immutable observation of a marketplace agent call. The dimensions are deliberately
+ * separate: a timeout is not a verification failure, a returned response is not proof of
+ * settlement, and an internal routing exclusion is not a marketplace ban.
+ */
+export interface AgentOperationEvent {
+  schema: "bind.agent-operation.v1";
+  eventId: string;
+  /** Private execution capability; aggregate/public projections must not expose it. */
+  executionId: string;
+  step: number;
+  attempt: number;
+  observedAt: string;
+  agentId?: string;
+  agentName: string;
+  serviceName?: string;
+  availability: "online" | "offline" | "unknown";
+  acceptance: "accepted" | "not_accepted" | "unknown";
+  /** Exactly one terminal operation outcome. */
+  outcome: "verified_completed" | "verification_failed" | "timed_out" | "no_result";
+  verification: "passed" | "failed" | "not_run";
+  payment: "not_authorized" | "authorized_ambiguous" | "settlement_confirmed" | "nonsettlement_confirmed";
+  evidenceSource: "bind_execution";
+}
+
 export interface ExecutionResult {
   step: number;
   agentName: string;
@@ -208,6 +233,8 @@ export interface BindExecution {
   status: "running" | "completed" | "failed" | "partial";
   error?: string;
   stepResults: ExecutionResult[];
+  /** Durable operation evidence derived from terminal attempts; absent on running stubs. */
+  agentOperationEvents?: AgentOperationEvent[];
   finalOutput?: string;
   anchorTxHash?: string;
   /** Canonical receipt schema and hash committed by the anchor transaction calldata. */

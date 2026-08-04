@@ -14,6 +14,7 @@ import {
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { BindPlan, BindExecution } from "./types.js";
+import { buildAgentOperationEvents } from "./agent-performance.js";
 
 const DIR = process.env.BIND_DATA_DIR ?? "data/bind";
 const UUID = /^[0-9a-fA-F-]{36}$/;
@@ -63,5 +64,8 @@ function read<T>(kind: string, id: string): T | null {
 
 export function savePlan(plan: BindPlan): void { persist("plans", plan.planId, plan); }
 export function loadPlan(id: string): BindPlan | null { return read<BindPlan>("plans", id); }
-export function saveExecution(execution: BindExecution): void { persist("executions", execution.executionId, execution); }
+export function saveExecution(execution: BindExecution): void {
+  if (execution.status !== "running") execution.agentOperationEvents = buildAgentOperationEvents(execution);
+  persist("executions", execution.executionId, execution);
+}
 export function loadExecution(id: string): BindExecution | null { return read<BindExecution>("executions", id); }

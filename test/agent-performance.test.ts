@@ -1,39 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentAttempt, AgentOperationEvent, BindExecution } from "../src/bind/types.js";
+import { buildReceiptCore, hashCanonical, RECEIPT_VERSION } from "../src/bind/receipt.js";
 import {
   aggregateAgentPerformance,
   buildAgentOperationEvents,
+  readDurableAgentOperationEvents,
   summarizeAgentPerformance,
 } from "../src/bind/agent-performance.js";
 
-// TEST-ONLY fixture factory. These records are never written outside a temporary test directory.
-function testOnlyExecution(attempts: AgentAttempt[], executionId = "11111111-1111-4111-8111-111111111111"): BindExecution {
-  return {
-    executionId,
-    planId: "22222222-2222-4222-8222-222222222222",
-    goal: "TEST ONLY performance evidence fixture",
-    status: "completed",
-    stepResults: [{
-      step: 1,
-      agentId: attempts.at(-1)?.agentId,
-      agentName: attempts.at(-1)?.agentName ?? "TEST ONLY agent",
-      status: attempts.at(-1)?.status === "passed" ? "passed" : attempts.at(-1)?.status === "failed" ? "failed" : "errored",
-      attempts,
-      completedAt: "2026-08-04T12:00:00.000Z",
-    }],
-    totalPaid: 0,
-    totalSteps: 1,
-    completedSteps: attempts.some((attempt) => attempt.status === "passed") ? 1 : 0,
-    createdAt: "2026-08-04T11:59:00.000Z",
-    completedAt: "2026-08-04T12:00:00.000Z",
-  };
-}
-
-function testOnlyAttempt(status: AgentAttempt["status"], overrides: Partial<AgentAttempt> = {}): AgentAttempt {
+function attempt(status: AgentAttempt["status"], overrides: Partial<AgentAttempt> = {}): AgentAttempt {
   return {
     agentId: "test-agent-1",
     agentName: "TEST ONLY Agent One",
@@ -46,102 +25,171 @@ function testOnlyAttempt(status: AgentAttempt["status"], overrides: Partial<Agen
   };
 }
 
-function testOnlyEvent(outcome: AgentOperationEvent["outcome"], ordinal: number): AgentOperationEvent {
-  const verification = outcome === "verified_completed" ? "passed" : outcome === "verification_failed" ? "failed" : "not_run";
-  return {
-    schema: "bind.agent-operation.v1",
-    eventId: `test-only-event-${ordinal}`,
-    executionId: `test-only-execution-${ordinal}`,
-    step: 1,
-    attempt: 1,
-    observedAt: `2026-08-04T12:00:0${ordinal}.000Z`,
-    agentId: "test-agent-1",
-    agentName: "TEST ONLY Agent One",
-    serviceName: "TEST ONLY service",
-    availability: outcome === "timed_out" ? "offline" : outcome === "no_result" ? "unknown" : "online",
-    acceptance: verification === "not_run" ? "unknown" : "accepted",
-    outcome,
-    verification,
-    payment: "not_authorized",
-    evidenceSource: "bind_execution",
+function execution(attempts: AgentAttempt[], executionId = "11111111-1111-4111-8111-111111111111"): BindExecution {
+  const value: BindExecution = {
+    executionId,
+    planId: "22222222-2222-4222-8222-222222222222",
+    goal: "TEST ONLY private performance evidence fixture",
+    status: "completed",
+    stepResults: [{
+      step: 1,
+      agentId: attempts.at(-1)?.agentId,
+      agentName: attempts.at(-1)?.agentName ?? "TEST ONLY agent",
+      status: attempts.at(-1)?.status === "passed" ? "passed" : attempts.at(-1)?.status === "failed" ? "failed" : "errored",
+      attempts,
+      completedAt: "2026-08-04T12:00:00.000Z",
+    }],
+    totalPaid: 0,
+    totalSteps: 1,
+    completedSteps: attempts.some((item) => item.status === "passed") ? 1 : 0,
+    createdAt: "2026-08-04T11:59:00.000Z",
+    completedAt: "2026-08-04T12:00:00.000Z",
   };
+  value.receiptVersion = RECEIPT_VERSION;
+  value.receiptSha256 = hashCanonical(buildReceiptCore(value));
+  return value;
 }
 
-test("execution attempts become durable events with one mutually exclusive outcome each", () => {
-  const attempts = [
-    testOnlyAttempt("passed", { output: { data: "ok" }, verificationDetail: "structured result" }),
-    testOnlyAttempt("failed", { output: { error: "bad" }, verificationDetail: "error field present" }),
-    testOnlyAttempt("errored", { error: "HTTP 0: This operation was aborted" }),
-    testOnlyAttempt("errored", { error: "HTTP 503: unavailable" }),
-  ];
+function derivedEvent(status: AgentAttempt["status"] = "passed"): AgentOperationEvent {
+  return buildAgentOperationEvents(execution([attempt(status)]))[0]!;
+}
 
-  const events = buildAgentOperationEvents(testOnlyExecution(attempts));
-  assert.deepEqual(events.map((event) => event.outcome), [
-    "verified_completed",
-    "verification_failed",
-    "timed_out",
-    "no_result",
+test("timeout is separate from offline availability without independent network evidence", () => {
+  const events = buildAgentOperationEvents(execution([
+    attempt("errored", { error: "AbortError: request timed out" }),
+    attempt("errored", { error: "HTTP 503: unavailable" }),
+  ]));
+  assert.deepEqual(events.map((event) => event.outcome), ["timed_out", "no_result"]);
+  assert.deepEqual(events.map((event) => event.availability), ["unknown", "online"]);
+  assert.deepEqual(events.map((event) => event.verification), ["not_run", "not_run"]);
+});
+
+test("event IDs commit to content and exact duplicates are suppressed", () => {
+  const event = derivedEvent();
+  const changed = { ...event, outcome: "verification_failed" as const, verification: "failed" as const };
+  assert.throws(() => aggregateAgentPerformance([event, changed]), /duplicate event id/i);
+  const [record] = aggregateAgentPerformance([event, { ...event }]);
+  assert.equal(record.testedOperations, 1);
+  assert.match(event.eventId, /^sha256:[0-9a-f]{64}$/);
+});
+
+test("invalid event dimensions and non-content IDs are rejected", () => {
+  const event = derivedEvent();
+  assert.throws(
+    () => aggregateAgentPerformance([{ ...event, availability: "offline" }]),
+    /event id|dimension/i,
+  );
+  assert.throws(() => aggregateAgentPerformance([{ ...event, eventId: "position-1" }]), /event id/i);
+});
+
+test("timestamps are canonical, valid, and deterministically reproduce event IDs", () => {
+  const value = execution([attempt("passed")]);
+  const first = buildAgentOperationEvents(value);
+  const second = buildAgentOperationEvents(structuredClone(value));
+  assert.equal(first[0]?.observedAt, "2026-08-04T12:00:00.000Z");
+  assert.equal(first[0]?.eventId, second[0]?.eventId);
+
+  value.stepResults[0]!.completedAt = "not-a-date";
+  value.receiptSha256 = hashCanonical(buildReceiptCore(value));
+  assert.throws(() => buildAgentOperationEvents(value), /timestamp/i);
+});
+
+test("payment and verification remain orthogonal dimensions", () => {
+  const events = buildAgentOperationEvents(execution([
+    attempt("passed", { paid: false, paymentState: "not_authorized" }),
+    attempt("failed", {
+      paid: true,
+      paymentState: "settlement_confirmed",
+      paymentTxHash: `0x${"a".repeat(64)}`,
+    }),
+  ]));
+  assert.deepEqual(events.map(({ outcome, verification, payment }) => ({ outcome, verification, payment })), [
+    { outcome: "verified_completed", verification: "passed", payment: "not_authorized" },
+    { outcome: "verification_failed", verification: "failed", payment: "settlement_confirmed" },
   ]);
-  assert.deepEqual(events.map((event) => event.verification), ["passed", "failed", "not_run", "not_run"]);
-  assert.deepEqual(events.map((event) => event.availability), ["online", "online", "offline", "unknown"]);
-  assert.equal(new Set(events.map((event) => event.eventId)).size, 4);
 });
 
-test("rating and routing exclusion use only operations where verification ran", () => {
-  const events = [
-    testOnlyEvent("verification_failed", 1),
-    testOnlyEvent("timed_out", 2),
-    testOnlyEvent("no_result", 3),
-    testOnlyEvent("verification_failed", 4),
-    testOnlyEvent("verification_failed", 5),
-  ];
-
-  const [performance] = aggregateAgentPerformance(events);
-  assert.equal(performance.testedOperations, 5);
-  assert.equal(performance.verifiedOperations, 3);
-  assert.equal(performance.verifiedPassRate, 0);
-  assert.equal(performance.timedOut, 1);
-  assert.equal(performance.noResult, 1);
-  assert.equal(performance.routingEligibility, "excluded");
-  assert.match(performance.routingReason ?? "", /verified operations/i);
+test("impossible payment dimensions are rejected", () => {
+  assert.throws(
+    () => buildAgentOperationEvents(execution([attempt("passed", { paid: true, paymentState: "not_authorized" })])),
+    /payment dimension/i,
+  );
 });
 
-test("public metric summary counts agents by latest evidence without inventing unknown availability", () => {
-  const agentOne = [testOnlyEvent("timed_out", 1), testOnlyEvent("verified_completed", 2)];
-  const agentTwo = { ...testOnlyEvent("no_result", 3), agentId: "test-agent-2", agentName: "TEST ONLY Agent Two" };
-  const summary = summarizeAgentPerformance([...agentOne, agentTwo]);
-
-  assert.deepEqual(summary, {
-    agentsTested: 2,
-    online: 1,
-    offline: 0,
-    availabilityUnknown: 1,
-    completed: 1,
-    failedVerification: 0,
-    timedOut: 1,
-    noResult: 1,
-    removedFromRouting: 0,
-    verifiedOperations: 1,
-  });
+test("name-only observations are not unauthenticatedly merged", () => {
+  const two = buildAgentOperationEvents(execution([
+    attempt("passed", { agentId: undefined, agentName: "Shared Name" }),
+    attempt("failed", { agentId: undefined, agentName: "Shared Name" }),
+  ]));
+  const records = aggregateAgentPerformance(two);
+  assert.equal(records.filter((record) => record.agentName === "Shared Name").length, 2);
+  assert.ok(records.every((record) => record.agentId || record.identityBasis === "name_only_uncorrelated"));
 });
 
-test("terminal execution persistence materializes evidence while running stubs do not", async () => {
+test("durable reader derives only strict locally receipt-hash-bound terminal attempts", async () => {
   const dataDir = await mkdtemp(join(tmpdir(), "bind-agent-performance-test-"));
+  const executions = join(dataDir, "executions");
+  await mkdir(executions);
   process.env.BIND_DATA_DIR = dataDir;
   try {
-    const store = await import(`../src/bind/store.js?agent-performance=${Date.now()}`);
-    const terminal = testOnlyExecution([
-      testOnlyAttempt("passed", { output: { data: "ok" }, verificationDetail: "structured result" }),
-    ]);
-    store.saveExecution(terminal);
-    const loaded = store.loadExecution(terminal.executionId);
-    assert.equal(loaded?.agentOperationEvents?.length, 1);
-    assert.equal(loaded?.agentOperationEvents?.[0].outcome, "verified_completed");
+    const bound = execution([attempt("passed")]);
+    await writeFile(join(executions, `${bound.executionId}.json`), JSON.stringify(bound));
+    const legacy = execution([attempt("passed")], "33333333-3333-4333-8333-333333333333");
+    delete legacy.receiptVersion;
+    delete legacy.receiptSha256;
+    await writeFile(join(executions, `${legacy.executionId}.json`), JSON.stringify(legacy));
+    const running = { ...execution([], "44444444-4444-4444-8444-444444444444"), status: "running" as const };
+    await writeFile(join(executions, `${running.executionId}.json`), JSON.stringify(running));
 
-    const running = { ...testOnlyExecution([], "33333333-3333-4333-8333-333333333333"), status: "running" as const };
-    store.saveExecution(running);
-    assert.equal(store.loadExecution(running.executionId)?.agentOperationEvents, undefined);
+    const events = readDurableAgentOperationEvents();
+    assert.equal(events.length, 1);
+    assert.equal(events[0]?.agentName, "TEST ONLY Agent One");
   } finally {
     await rm(dataDir, { recursive: true, force: true });
   }
+});
+
+test("tampered or malformed claimed receipt evidence fails visibly", async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), "bind-agent-performance-tamper-"));
+  const executions = join(dataDir, "executions");
+  await mkdir(executions);
+  process.env.BIND_DATA_DIR = dataDir;
+  try {
+    const tampered = execution([attempt("passed")]);
+    tampered.goal = "tampered after receipt";
+    await writeFile(join(executions, `${tampered.executionId}.json`), JSON.stringify(tampered));
+    assert.throws(() => readDurableAgentOperationEvents(), /receipt hash/i);
+    tampered.receiptSha256 = "not-a-hash";
+    await writeFile(join(executions, `${tampered.executionId}.json`), JSON.stringify(tampered));
+    assert.throws(() => readDurableAgentOperationEvents(), /receipt hash/i);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("corrupt storage fails visibly while a missing directory is an empty baseline", async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), "bind-agent-performance-corrupt-"));
+  process.env.BIND_DATA_DIR = dataDir;
+  assert.deepEqual(readDurableAgentOperationEvents(), []);
+  const executions = join(dataDir, "executions");
+  await mkdir(executions);
+  await writeFile(join(executions, "corrupt.json"), "{not json");
+  assert.throws(() => readDurableAgentOperationEvents(), /could not read performance evidence/i);
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+test("summary contains reporting dimensions only", () => {
+  const summary = summarizeAgentPerformance([derivedEvent()]);
+  assert.deepEqual(summary, {
+    agentsTested: 1,
+    online: 1,
+    offline: 0,
+    availabilityUnknown: 0,
+    completed: 1,
+    failedVerification: 0,
+    timedOut: 0,
+    noResult: 0,
+    verifiedOperations: 1,
+  });
+  assert.equal("removedFromRouting" in summary, false);
 });

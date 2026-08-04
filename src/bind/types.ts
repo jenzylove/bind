@@ -233,8 +233,6 @@ export interface BindExecution {
   status: "running" | "completed" | "failed" | "partial";
   error?: string;
   stepResults: ExecutionResult[];
-  /** Durable operation evidence derived from terminal attempts; absent on running stubs. */
-  agentOperationEvents?: AgentOperationEvent[];
   finalOutput?: string;
   anchorTxHash?: string;
   /** Canonical receipt schema and hash committed by the anchor transaction calldata. */

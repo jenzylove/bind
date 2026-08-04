@@ -8,7 +8,6 @@ import type { BindAgent, BindPlan, BindStep, PlanRequest } from "./types.js";
 import { findMatchingAgentsScored, type MarketplaceAgent, type MarketplaceService } from "./marketplace.js";
 import { selectAgents, type SelectCandidate } from "./select.js";
 import { repSummary, isProvenBad } from "./reputation.js";
-import { durableAgentPerformance } from "./agent-performance.js";
 import { serviceReliabilityPenalty, serviceReliabilitySummary } from "./service-reliability.js";
 import { isFlagshipGoal, buildFlagshipPlan } from "./flagship.js";
 import { detectGoalDomain, domainMismatchReason, serviceMatchesGoalDomain } from "./routing-fit.js";
@@ -224,9 +223,6 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   const analytical = goalIsAnalytical(req.goal);
   const nonCryptoGoal = goalIsClearlyNonCrypto(req.goal);
   const scored = await findMatchingAgentsScored(req.goal);
-  const performanceExcluded = durableAgentPerformance().filter((agent) => agent.routingEligibility === "excluded");
-  const excludedAgentIds = new Set(performanceExcluded.flatMap((agent) => agent.agentId ? [agent.agentId] : []));
-  const excludedAgentNames = new Set(performanceExcluded.filter((agent) => !agent.agentId).map((agent) => agent.agentName));
 
   // Hard guardrails: must have a callable service, must be affordable, and must not
   // be an action agent when the goal is analytical. These prevent the "surprise
@@ -234,9 +230,6 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   const eligible = scored.filter(({ agent }) => {
     if (agent.services.length === 0) return false;
     if (EXCLUDE_IDS.has(agent.agentId)) return false; // settle-but-unusable (MCP/topup) — never route to these
-    // Internal exclusion only: the verified-operation policy never claims a marketplace ban.
-    if (excludedAgentIds.has(agent.agentId) || excludedAgentNames.has(agent.name)) return false;
-    // Legacy recorded evidence remains a conservative guard until enough v1 events accrue.
     if (isProvenBad(agent.agentId, agent.name)) return false;
     const svc = chosenService(agent, req.goal);
     if (!serviceMatchesGoalDomain(req.goal, agent, svc)) return false;

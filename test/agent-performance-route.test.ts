@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express from "express";
 import type { Server } from "node:http";
 import type { BindExecution } from "../src/bind/types.js";
+import { buildReceiptCore, hashCanonical, RECEIPT_VERSION } from "../src/bind/receipt.js";
 
-test("GET /bind/performance publishes only evidence-backed aggregate counts", async (t) => {
+test("GET /bind/performance publishes privacy-safe local receipt-bound reporting only", async (t) => {
   const dataDir = await mkdtemp(join(tmpdir(), "bind-performance-route-test-"));
   process.env.BIND_DATA_DIR = dataDir;
   process.env.BIND_ALLOW_FREE = "1";
@@ -16,7 +17,6 @@ test("GET /bind/performance publishes only evidence-backed aggregate counts", as
     import("../src/bind/store.js"),
   ]);
 
-  // TEST-ONLY fixture stored exclusively in the temporary directory above.
   const execution: BindExecution = {
     executionId: "77777777-7777-4777-8777-777777777777",
     planId: "88888888-8888-4888-8888-888888888888",
@@ -33,12 +33,12 @@ test("GET /bind/performance publishes only evidence-backed aggregate counts", as
         agentId: "test-route-agent",
         agentName: "TEST ONLY Route Agent",
         serviceName: "TEST ONLY Route Service",
-        endpoint: "https://test-only.invalid/run",
+        endpoint: "https://test-only.invalid/private-endpoint",
         status: "passed",
         paid: false,
         paymentState: "not_authorized",
         output: { secret: "TEST ONLY private output" },
-        verificationDetail: "TEST ONLY verified detail",
+        verificationDetail: "TEST ONLY private verified detail",
       }],
     }],
     totalPaid: 0,
@@ -47,7 +47,11 @@ test("GET /bind/performance publishes only evidence-backed aggregate counts", as
     createdAt: "2026-08-04T11:59:00.000Z",
     completedAt: "2026-08-04T12:00:00.000Z",
   };
+  execution.receiptVersion = RECEIPT_VERSION;
+  execution.receiptSha256 = hashCanonical(buildReceiptCore(execution));
   saveExecution(execution);
+  const persisted = JSON.parse(await readFile(join(dataDir, "executions", `${execution.executionId}.json`), "utf8"));
+  assert.equal("agentOperationEvents" in persisted, false);
 
   const app = express();
   app.use("/bind", bindRouter);
@@ -73,13 +77,23 @@ test("GET /bind/performance publishes only evidence-backed aggregate counts", as
     failedVerification: 0,
     timedOut: 0,
     noResult: 0,
-    removedFromRouting: 0,
     verifiedOperations: 1,
   });
   assert.equal(body.agents[0].rating.verifiedOperations, 1);
-  assert.equal(body.agents[0].rating.verifiedPassRate, 1);
-  assert.equal(body.agents[0].routing.status, "eligible");
+  assert.equal("routing" in body.agents[0], false);
+  assert.equal("removedFromRouting" in body.metrics, false);
+  assert.match(body.note, /local receipt-hash binding/i);
+  assert.match(body.note, /on-chain confirmation is not checked/i);
+  assert.match(body.note, /name-only observations.*not merged/i);
+
   const serialized = JSON.stringify(body);
-  assert.doesNotMatch(serialized, /private goal|private output|verified detail|77777777/);
-  assert.match(body.note, /legacy records are not inferred/i);
+  for (const secret of [
+    "private goal", "private output", "private verified detail", "private-endpoint",
+    execution.executionId,
+  ]) assert.doesNotMatch(serialized, new RegExp(secret, "i"));
+});
+
+test("planner has no performance import or performance-based exclusion", async () => {
+  const planner = await readFile(new URL("../src/bind/planner.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(planner, /agent-performance|durableAgentPerformance|performanceExcluded|removedFromRouting/);
 });

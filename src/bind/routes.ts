@@ -672,19 +672,18 @@ bindRouter.get("/agents", (_req, res) => {
   });
 });
 
-// Evidence-backed operational metrics. Only explicit v1 events generated while committing a
-// terminal execution count; old records are not reinterpreted and no catalog/promotional
-// totals are mixed in. "excluded" is an internal routing policy, never a marketplace ban.
+// Evidence-backed operational reporting. This endpoint never influences planner routing.
 bindRouter.get("/performance", (_req, res) => {
   const events = readDurableAgentOperationEvents();
   const agents = aggregateAgentPerformance(events);
   res.json({
     schema: "bind.agent-performance.v1",
-    note: "Counts come only from durable bind.agent-operation.v1 evidence. Legacy records are not inferred. Completed means verification passed; failedVerification means verification ran and failed; timeout and noResult never enter the rating denominator. Removed from routing is Bind-internal exclusion, not a marketplace ban.",
+    note: "Counts are derived from canonical terminal attempts only after strict validation and local receipt-hash binding to a bind.execution-receipt.v2 receipt. On-chain confirmation is not checked by this endpoint. Legacy and unbound records are excluded. Timeouts do not prove an agent offline. Name-only observations are kept distinct and not merged because seller identity is unauthenticated.",
     metrics: summarizeAgentPerformance(events),
     agents: agents.map((agent) => ({
       agentId: agent.agentId,
       name: agent.agentName,
+      identityBasis: agent.identityBasis,
       testedOperations: agent.testedOperations,
       availability: {
         latest: agent.latestAvailability,
@@ -701,10 +700,6 @@ bindRouter.get("/performance", (_req, res) => {
       rating: {
         verifiedOperations: agent.verifiedOperations,
         verifiedPassRate: agent.verifiedPassRate,
-      },
-      routing: {
-        status: agent.routingEligibility,
-        reason: agent.routingReason,
       },
     })),
   });

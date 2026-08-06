@@ -35,7 +35,8 @@ function readExecutions(): BindExecution[] {
   }
 }
 
-function legacyAttempt(step: ExecutionResult): AgentAttempt {
+function legacyAttempt(step: ExecutionResult): AgentAttempt | null {
+  if (!["passed", "failed", "errored"].includes(step.status)) return null;
   return {
     agentId: step.agentId,
     agentName: step.agentName,
@@ -57,7 +58,8 @@ export function serviceReliability(): Map<string, ServiceReliability> {
   const stats = new Map<string, ServiceReliability>();
   for (const exec of readExecutions()) {
     for (const step of exec.stepResults ?? []) {
-      const attempts = step.attempts?.length ? step.attempts : [legacyAttempt(step)];
+      const legacy = legacyAttempt(step);
+      const attempts: AgentAttempt[] = step.attempts?.length ? step.attempts : legacy ? [legacy] : [];
       for (const attempt of attempts) {
         if (!attempt.agentId && !attempt.serviceName && !attempt.endpoint) continue;
         const key = serviceKey(attempt.agentId, attempt.serviceName, attempt.endpoint);
@@ -89,7 +91,7 @@ export function serviceReliabilitySummary(agentId?: string, serviceName?: string
   const rec = serviceReliabilityFor(agentId, serviceName, endpoint);
   if (!rec || rec.attempts < 1) return null;
   const rate = `${Math.round(rec.passRate * 100)}% verified over ${rec.attempts} service attempt${rec.attempts === 1 ? "" : "s"}`;
-  return rec.lastFailure ? `${rate}; last failure: ${rec.lastFailure.slice(0, 80)}` : rate;
+  return rec.lastFailure ? `${rate}; a recent failure was recorded` : rate;
 }
 
 export function serviceReliabilityPenalty(agentId?: string, serviceName?: string, endpoint?: string): number {

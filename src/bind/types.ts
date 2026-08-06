@@ -59,6 +59,8 @@ export interface BindPlan {
   createdAt: string;
   note?: string;
   inputs?: Record<string, unknown>;
+  /** Canonical offered quote persisted at issuance. */
+  quoteSnapshot?: QuoteSnapshot;
   /** True for the built-in dependency-graph flagship (step 2 consumes step 1's output). */
   flagship?: boolean;
 }
@@ -70,12 +72,41 @@ export interface AgentAttempt {
   serviceName?: string;
   endpoint?: string;
   feeUsdt?: number;
+  feeBaseUnits?: string;
   paid: boolean;
+  paymentState?: "not_authorized" | "authorized_ambiguous" | "settlement_confirmed" | "nonsettlement_confirmed";
   status: "passed" | "failed" | "errored";
   paymentTxHash?: string;
+  paymentRecipient?: string;
   input?: unknown;
+  output?: unknown;
   verificationDetail?: string;
   error?: string;
+}
+
+/**
+ * One immutable observation of a marketplace agent call. The dimensions are deliberately
+ * separate: a timeout is not a verification failure, a returned response is not proof of
+ * settlement, and an internal routing exclusion is not a marketplace ban.
+ */
+export interface AgentOperationEvent {
+  schema: "bind.agent-operation.v1";
+  eventId: string;
+  /** Private execution capability; aggregate/public projections must not expose it. */
+  executionId: string;
+  step: number;
+  attempt: number;
+  observedAt: string;
+  agentId?: string;
+  agentName: string;
+  serviceName?: string;
+  availability: "online" | "offline" | "unknown";
+  acceptance: "accepted" | "not_accepted" | "unknown";
+  /** Exactly one terminal operation outcome. */
+  outcome: "verified_completed" | "verification_failed" | "timed_out" | "no_result";
+  verification: "passed" | "failed" | "not_run";
+  payment: "not_authorized" | "authorized_ambiguous" | "settlement_confirmed" | "nonsettlement_confirmed";
+  evidenceSource: "bind_execution";
 }
 
 export interface ExecutionResult {
@@ -88,6 +119,7 @@ export interface ExecutionResult {
   agentId?: string;
   /** What this agent was actually paid, when a real settlement happened. */
   feeUsdt?: number;
+  feeBaseUnits?: string;
   /** True when the primary hire flaked and the stand-in delivered instead. */
   usedFallback?: boolean;
   /** Every primary/fallback attempt made for this step, so Bind can learn service reliability. */
@@ -97,15 +129,77 @@ export interface ExecutionResult {
   blockedBy?: string;
   input?: unknown;
   output?: unknown;
+  /** Verification policy captured at execution time for receipt reproducibility. */
+  verificationType?: BindStep["verificationType"];
+  verificationCriteria?: string;
   verificationResult?: {
     passed: boolean;
     reportUrl?: string;
     detail?: string;
   };
   paymentTxHash?: string;
+  paymentState?: "not_authorized" | "authorized_ambiguous" | "settlement_confirmed" | "nonsettlement_confirmed";
   error?: string;
   startedAt?: string;
   completedAt?: string;
+}
+
+export interface BuyerPaymentEvidence {
+  amountUsdt: number;
+  amountBaseUnits: string;
+  chain: "eip155:196";
+  token: string;
+  recipient: string;
+  source: "direct_transfer" | "eip3009" | "sponsored";
+  state: "confirmed" | "submitted" | "sponsored" | "unconfirmed";
+  txHash?: string;
+}
+
+/** Immutable economics Bind offered before downstream side effects. */
+export interface QuoteSnapshot {
+  schema: "bind.quote.v2";
+  planId: string;
+  createdAt: string;
+  expiresAt: string;
+  buyerTotalBaseUnits: string;
+  agentBudgetBaseUnits: string;
+  platformFeeBaseUnits: string;
+  buyerSettlement: {
+    chain: "eip155:196";
+    token: string;
+    recipient: string;
+  };
+  steps: Array<{
+    step: number;
+    candidates: Array<{
+      role: "primary" | "fallback";
+      agentId: string;
+      serviceId: string;
+      serviceName: string;
+      endpointSha256: string;
+      feeToken: string;
+      feeCapBaseUnits: string;
+      chain: "eip155:196";
+      recipient: string | null;
+      authorization: "exact_reviewed_recipient_required";
+    }>;
+  }>;
+}
+
+export interface RefundAttestation {
+  schema: "bind.refund-attestation.v1";
+  version: number;
+  executionId: string;
+  priorReceiptSha256: string;
+  previousAttestationSha256?: string;
+  txHash: string;
+  token: string;
+  sender: string;
+  recipient: string;
+  amountBaseUnits: string;
+  state: "confirmed" | "confirmation_failed";
+  verifiedAt: string;
+  sha256: string;
 }
 
 export interface BindExecution {
@@ -114,14 +208,36 @@ export interface BindExecution {
   goal: string;
   /** The buyer's wallet (from the payment's Transfer log) — keys per-wallet mission history. */
   payer?: string;
-  /** Agent budget quoted but never spent, returned to the buyer on-chain. */
+  /** Incoming one-payment evidence, kept separate from downstream agent settlements. */
+  buyerPayment?: BuyerPaymentEvidence;
+  /** Canonical quote captured before execution and committed into the receipt. */
+  quoteSnapshot?: QuoteSnapshot;
+  /** Amount withheld from immediate refund while downstream authorization settlement is unresolved. */
+  unresolvedAuthorizationExposureUsdt?: number;
+  /** Full refund liability, independent of submission or confirmation. */
+  refundAmountDueBaseUnits?: string;
+  refundAmountSubmittedBaseUnits?: string;
+  refundAmountConfirmedBaseUnits?: string;
+  refundToken?: string;
+  refundSender?: string;
+  refundAmountDueUsdt?: number;
+  refundAmountSubmittedUsdt?: number;
+  refundAmountConfirmedUsdt?: number;
+  /** @deprecated legacy alias for refundAmountSubmittedUsdt. */
   refundedUsdt?: number;
   refundTxHash?: string;
+  refundState?: "none" | "not_due" | "below_threshold" | "submitted" | "confirmed" | "failed" | "confirmation_failed" | "unconfirmed" | "reconciliation_required";
+  refundReason?: string;
+  /** Versioned post-anchor refund confirmations, each chained to the original receipt. */
+  refundAttestations?: RefundAttestation[];
   status: "running" | "completed" | "failed" | "partial";
+  error?: string;
   stepResults: ExecutionResult[];
   finalOutput?: string;
-  finalReportUrl?: string;
   anchorTxHash?: string;
+  /** Canonical receipt schema and hash committed by the anchor transaction calldata. */
+  receiptVersion?: "bind.execution-receipt.v2";
+  receiptSha256?: string;
   totalPaid: number;
   totalSteps: number;
   completedSteps: number;

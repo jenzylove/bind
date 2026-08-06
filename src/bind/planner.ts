@@ -230,7 +230,6 @@ export async function createPlan(req: PlanRequest): Promise<BindPlan> {
   const eligible = scored.filter(({ agent }) => {
     if (agent.services.length === 0) return false;
     if (EXCLUDE_IDS.has(agent.agentId)) return false; // settle-but-unusable (MCP/topup) — never route to these
-    // Fired by its own record: repeatedly hired, never delivered verified work.
     if (isProvenBad(agent.agentId, agent.name)) return false;
     const svc = chosenService(agent, req.goal);
     if (!serviceMatchesGoalDomain(req.goal, agent, svc)) return false;

@@ -5,15 +5,18 @@
 // array. Nothing from the marketplace (endpoint URLs) or the user (goal) is ever
 // interpolated into a shell string — there is no shell. This closes the command-
 // injection surface that existed when calls were built as `execSync(\`curl '${url}'\`)`.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { AgentAttempt, BindAgent, BindExecution, BindPlan, BindStep, ExecutionResult } from "./types.js";
+import type { AgentAttempt, BindAgent, BindExecution, BindPlan, BindStep, BuyerPaymentEvidence, ExecutionResult } from "./types.js";
 import { verifyStepOutput, checkRelevance } from "./verify.js";
-import { anchorExecution } from "./receipt.js";
+import { anchorExecution, assertOfferedQuoteUnchanged } from "./receipt.js";
 import { inferParams } from "./agent-infer.js";
+import { reviewedPayeeForEndpoint } from "./reviewed-downstream.js";
 import { synthesizeDeliverable, type AgentOutput } from "./synthesize.js";
-import { refundUnspent } from "./refund.js";
+import { refundExactBaseUnits, confirmRefundTransfer, type RefundConfirmation, type RefundResult } from "./refund.js";
+import { config } from "../config.js";
+import { authorizationClaimKey, directPaymentClaimKey, outstandingPaymentLiabilityBaseUnits, reservePaymentClaim, transitionPaymentClaim } from "./payment-claims.js";
 
 const execFileAsync = promisify(execFile);
 const ONCHAINOS_PATH = (process.env.HOME || process.env.USERPROFILE || "") + "/.local/bin/onchainos";
@@ -23,26 +26,41 @@ const USDT_ADDRESS = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
 // turns this into a 402 with a "fund your wallet" message. This closes the bug where an
 // empty wallet still "executed" the order: signing an x402 authorization does NOT check
 // balance, so without this guard a broke wallet sails through and settlement silently fails.
+function formatUsdtBaseUnits(value: bigint): string {
+  const whole = value / 1_000_000n;
+  const fraction = (value % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
 export class InsufficientBalanceError extends Error {
-  constructor(public have: number, public need: number) {
-    super(`INSUFFICIENT_BALANCE: wallet holds ${have} USDT but this plan needs ${need} USDT`);
+  constructor(public haveBaseUnits: bigint, public needBaseUnits: bigint, public reservedBaseUnits: bigint) {
+    super(`INSUFFICIENT_BALANCE: wallet holds ${formatUsdtBaseUnits(haveBaseUnits)} USDT but needs ${formatUsdtBaseUnits(needBaseUnits)} USDT including ${formatUsdtBaseUnits(reservedBaseUnits)} USDT reserved for unresolved liabilities`);
     this.name = "InsufficientBalanceError";
   }
 }
 
-// Reads the agentic wallet's USDT balance on X Layer. Returns null if it can't be read
-// (in which case we do NOT block execution — we only block on a *confirmed* shortfall).
-async function getUsdtBalance(): Promise<number | null> {
+export class WalletBalanceUnavailableError extends Error {
+  constructor() {
+    super("WALLET_BALANCE_UNAVAILABLE: exact USDT solvency could not be proven before execution");
+    this.name = "WalletBalanceUnavailableError";
+  }
+}
+
+export function parseUsdtBalanceBaseUnits(value: unknown): bigint | null {
+  const text = typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+  const match = text.match(/^(0|[1-9][0-9]*)(?:\.([0-9]{1,6}))?$/);
+  if (!match) return null;
+  return BigInt(match[1]) * 1_000_000n + BigInt((match[2] ?? "").padEnd(6, "0") || "0");
+}
+
+async function getUsdtBalanceBaseUnits(): Promise<bigint | null> {
   try {
     const { stdout } = await execFileAsync(ONCHAINOS_PATH, ["wallet", "balance"], { timeout: 20000 });
     const parsed = JSON.parse(stdout);
     const details = parsed?.data?.details ?? [];
     for (const d of details) {
       for (const t of d.tokenAssets ?? []) {
-        if (String(t.tokenAddress).toLowerCase() === USDT_ADDRESS) {
-          const bal = parseFloat(t.balance);
-          if (!Number.isNaN(bal)) return bal;
-        }
+        if (String(t.tokenAddress).toLowerCase() === USDT_ADDRESS) return parseUsdtBalanceBaseUnits(t.balance);
       }
     }
     return null;
@@ -261,55 +279,6 @@ async function signPayment(challengeB64: string): Promise<string | null> {
   return null;
 }
 
-
-function paramArgs(body: Record<string, unknown>): string[] | null {
-  const args: string[] = [];
-  let bytes = 0;
-  for (const [key, value] of Object.entries(body)) {
-    if (value === undefined || value === null || value === "") continue;
-    const rendered = `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`;
-    bytes += Buffer.byteLength(rendered);
-    // Do not pass large files/base64 through process argv. The direct HTTP replay path
-    // already carries the JSON body; CLI fallback is only for small seller params.
-    if (bytes > 24_000) return null;
-    args.push("--param", rendered);
-  }
-  return args;
-}
-
-async function payAgentWithCli(endpoint: string, method: "GET" | "POST", body: Record<string, unknown>, quoted: number): Promise<CallResult> {
-  try {
-    const params = paramArgs(body);
-    if (!params) return { output: null, paid: false, error: "seller CLI fallback skipped: request body is too large for process arguments", input: body };
-    const quote = await execFileAsync(ONCHAINOS_PATH, ["payment", "quote", endpoint, "--method", method, ...params], { timeout: 45000 });
-    const q = JSON.parse(quote.stdout);
-    const data = q?.data;
-    const paymentId = data?.paymentId;
-    const selected = data?.candidates?.find((c: any) => c.recommended) ?? data?.candidates?.[0];
-    const selectedIndex = selected?.acceptsIndex ?? 0;
-    const amount = Number(selected?.amount ?? data?.decodedChallenge?.amount ?? 0) / 1e6;
-    const asset = String(data?.accepts?.[selectedIndex]?.asset ?? data?.decodedChallenge?.asset ?? USDT_ASSET_LC).toLowerCase();
-    const allowed = Math.max(quoted * 1.5, 0.002);
-    if (!paymentId) return { output: null, paid: false, error: "CLI quote did not return a payment id", input: body };
-    if (amount > allowed || amount > MAX_ABS_PER_CALL_USDT) {
-      return { output: null, paid: false, error: `overcharge blocked: agent demands $${amount} (quoted $${quoted}, cap $${Math.min(allowed, MAX_ABS_PER_CALL_USDT)})`, input: body };
-    }
-    if (asset && asset !== USDT_ASSET_LC) return { output: null, paid: false, error: `payment asset mismatch: challenge wants ${asset}, not USDT`, input: body };
-
-    const paid = await execFileAsync(ONCHAINOS_PATH, ["payment", "pay", "--payment-id", paymentId, "--selected-index", String(selectedIndex), "--yes", ...params], { timeout: 120000 });
-    const p = JSON.parse(paid.stdout);
-    const receipt = p?.data?.decodedReceipt;
-    const txHash = p?.data?.txHash ?? receipt?.transaction;
-    if (p?.data?.ok === true || p?.data?.status === "success") {
-      return { output: p.data.result ?? {}, paid: true, txHash, input: body };
-    }
-    const detail = JSON.stringify(p?.data?.result ?? p?.data ?? p).replace(/\s+/g, " ").slice(0, 800);
-    return { output: null, paid: false, error: p?.data?.error ? `${p.data.error}: ${detail}` : `CLI paid replay failed: ${detail}`, input: body };
-  } catch (e) {
-    const err = e as { stdout?: string; stderr?: string; message?: string };
-    return { output: null, paid: false, error: String(err.stdout || err.stderr || err.message || "CLI payment failed").replace(/\s+/g, " ").slice(0, 800), input: body };
-  }
-}
 // Hardcoded, proven parameter mappings for the four agents Bind has tested end-to-end.
 // Returns null when the endpoint is unknown — the caller then asks inferParams to read
 // the service description and build params for that agent (Option D: works with ANY agent).
@@ -429,7 +398,62 @@ function readSettlement(headers: Headers): { settled: boolean; txHash?: string }
   }
 }
 
-interface CallResult { output: unknown | null; paid: boolean; txHash?: string; error?: string; input: Record<string, unknown>; }
+export type DownstreamPaymentState = "not_authorized" | "authorized_ambiguous" | "settlement_confirmed" | "nonsettlement_confirmed";
+
+interface SettlementEvidence { settled: boolean; txHash?: string }
+
+export function classifyDownstreamAuthorization(
+  _httpStatus: number,
+  settlement: SettlementEvidence | null,
+  confirmation: RefundConfirmation,
+): DownstreamPaymentState {
+  const validHash = typeof settlement?.txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(settlement.txHash);
+  return settlement?.settled === true && validHash && confirmation === "confirmed"
+    ? "settlement_confirmed"
+    : "authorized_ambiguous";
+}
+
+export function mayAttemptFallback(state: DownstreamPaymentState): boolean {
+  return state !== "authorized_ambiguous";
+}
+
+interface CallResult {
+  output: unknown | null;
+  paid: boolean;
+  paymentState: DownstreamPaymentState;
+  paidUsdt?: number;
+  paidBaseUnits?: string;
+  txHash?: string;
+  paymentRecipient?: string;
+  error?: string;
+  input: Record<string, unknown>;
+}
+
+export function remainingAgentBudget(plan: BindPlan, totalPaid: number): number {
+  const cap = plan.agentCost ?? plan.steps.reduce((sum, step) => sum + Math.max(step.agent.feeAmount, 0), 0);
+  return Math.max(cap - Math.max(totalPaid, 0), 0);
+}
+
+export function downstreamExposureBaseUnits(
+  results: ExecutionResult[],
+  state: "authorized_ambiguous" | "settlement_confirmed",
+): bigint {
+  let baseUnits = 0n;
+  for (const result of results) {
+    for (const attempt of result.attempts ?? []) {
+      if (attempt.paymentState !== state) continue;
+      if (!attempt.feeBaseUnits || !/^(0|[1-9][0-9]*)$/.test(attempt.feeBaseUnits)) {
+        throw new Error(`downstream ${state} attempt is missing an exact base-unit amount`);
+      }
+      baseUnits += BigInt(attempt.feeBaseUnits);
+    }
+  }
+  return baseUnits;
+}
+
+export function unresolvedAuthorizationExposureUsdt(results: ExecutionResult[]): number {
+  return Number(downstreamExposureBaseUnits(results, "authorized_ambiguous")) / 1e6;
+}
 
 function attemptFrom(
   agent: BindAgent,
@@ -441,11 +465,19 @@ function attemptFrom(
     agentName: agent.name,
     serviceName: agent.serviceName,
     endpoint: agent.endpoint,
-    feeUsdt: call.paid ? agent.feeAmount : undefined,
+    feeUsdt: call.paymentState === "authorized_ambiguous" || call.paymentState === "settlement_confirmed"
+      ? (call.paidUsdt ?? agent.feeAmount)
+      : undefined,
+    feeBaseUnits: call.paymentState === "authorized_ambiguous" || call.paymentState === "settlement_confirmed"
+      ? call.paidBaseUnits
+      : undefined,
     paid: call.paid,
+    paymentState: call.paymentState,
     status: outcome.passed ? "passed" : call.output === null ? "errored" : "failed",
     paymentTxHash: call.txHash,
+    paymentRecipient: call.paymentRecipient,
     input: call.input,
+    output: call.output ?? undefined,
     verificationDetail: outcome.detail,
     error: call.error,
   };
@@ -461,14 +493,100 @@ const USDT_ASSET_LC = "0x779ded0c9e1022225f8e0630b35a9b54be713736";
 // Decodes a 402 challenge to the amount (in USDT) and asset it actually demands. An
 // agent's live challenge can ask for MUCH more than the marketplace-listed fee — this is
 // how a $0.11-listed agent drained $3/call. We check this BEFORE signing.
-function readChallengeCost(challengeB64: string): { usdt: number; asset: string } | null {
+export function readChallengeCost(challengeB64: string, expectedResource: string, expectedPayee: string): { usdt: number; amountBaseUnits: string; asset: string; payTo: string } | null {
   try {
-    const dec = JSON.parse(Buffer.from(challengeB64, "base64").toString());
-    const accept = (dec.accepts || dec.paymentRequirements || [])[0] || dec.accepted || {};
-    const raw = accept.amount ?? accept.maxAmountRequired;
-    if (raw == null) return null;
-    // USDT on X Layer is 6 decimals.
-    return { usdt: Number(raw) / 1e6, asset: String(accept.asset || "").toLowerCase() };
+    const dec = JSON.parse(Buffer.from(challengeB64, "base64").toString()) as Record<string, unknown>;
+    if (dec.x402Version !== 2) return null;
+    const representations = [
+      Array.isArray(dec.accepts) ? dec.accepts : null,
+      Array.isArray(dec.paymentRequirements) ? dec.paymentRequirements : null,
+      dec.accepted && typeof dec.accepted === "object" ? [dec.accepted] : null,
+    ].filter((value): value is unknown[] => value !== null);
+    // The signer sees the complete challenge. More than one representation could be
+    // interpreted differently, so Bind accepts exactly one representation with one option.
+    if (representations.length !== 1 || representations[0].length !== 1) return null;
+    const listed = representations[0];
+    if (!listed[0] || typeof listed[0] !== "object") return null;
+    const resource = dec.resource && typeof dec.resource === "object"
+      ? String((dec.resource as Record<string, unknown>).url ?? "")
+      : "";
+    let expected: URL;
+    let actual: URL;
+    try { expected = new URL(expectedResource); actual = new URL(resource); } catch { return null; }
+    if (actual.href !== expected.href) return null;
+    const accept = listed[0] as Record<string, unknown>;
+    if (accept.scheme !== "exact") return null;
+    if (String(accept.network ?? "").toLowerCase() !== "eip155:196") return null;
+    const payTo = String(accept.payTo ?? "").toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(payTo) || payTo !== expectedPayee.toLowerCase()) return null;
+    const asset = String(accept.asset ?? "").toLowerCase();
+    if (asset !== USDT_ASSET_LC) return null;
+    const amount = accept.amount;
+    const maxAmount = accept.maxAmountRequired;
+    if (amount !== undefined && maxAmount !== undefined && amount !== maxAmount) return null;
+    const raw = amount ?? maxAmount;
+    // x402 base-unit amounts are unsigned base-10 integer strings. Reject permissive JS
+    // forms such as exponent, hexadecimal, floats, Infinity and NaN before comparison.
+    if (typeof raw !== "string" || !/^[1-9][0-9]*$/.test(raw)) return null;
+    const baseUnits = BigInt(raw);
+    if (baseUnits > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+    return { usdt: Number(baseUnits) / 1e6, amountBaseUnits: raw, asset, payTo };
+  } catch {
+    return null;
+  }
+}
+
+export interface SignedDownstreamTerms {
+  resource: string;
+  amountBaseUnits: string;
+  asset: string;
+  payTo: string;
+  payer: string;
+}
+
+export interface SignedDownstreamAuthorization {
+  from: string;
+  to: string;
+  value: string;
+  nonce: string;
+}
+
+/** Strict standard-v2 parser. EIP-3009 authenticates these transfer fields, not the HTTP body. */
+export function decodeSignedDownstreamCredential(
+  raw: string,
+  expected: SignedDownstreamTerms,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): SignedDownstreamAuthorization | null {
+  try {
+    const encoded = raw.trim().replace(/^X402\s+/i, "");
+    if (!/^[A-Za-z0-9+/_=-]+$/.test(encoded)) return null;
+    const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = JSON.parse(Buffer.from(normalized, "base64").toString("utf8")) as any;
+    if (!decoded || decoded.x402Version !== 2) return null;
+    if (decoded.accepts !== undefined || decoded.paymentRequirements !== undefined) return null;
+    if (!decoded.resource || typeof decoded.resource !== "object" || decoded.resource.url !== expected.resource) return null;
+    const accepted = decoded.accepted;
+    if (!accepted || typeof accepted !== "object" || Array.isArray(accepted)) return null;
+    if (accepted.scheme !== "exact" || String(accepted.network).toLowerCase() !== "eip155:196") return null;
+    if (String(accepted.asset).toLowerCase() !== expected.asset.toLowerCase()) return null;
+    if (String(accepted.payTo).toLowerCase() !== expected.payTo.toLowerCase()) return null;
+    if (accepted.amount !== expected.amountBaseUnits || accepted.maxAmountRequired !== undefined) return null;
+
+    const payload = decoded.payload;
+    const auth = payload?.authorization;
+    if (!payload || typeof payload !== "object" || !auth || typeof auth !== "object" || Array.isArray(auth)) return null;
+    if (typeof payload.signature !== "string" || !/^0x[0-9a-fA-F]{130}$/.test(payload.signature)) return null;
+    const from = String(auth.from ?? "").toLowerCase();
+    const to = String(auth.to ?? "").toLowerCase();
+    const value = String(auth.value ?? "");
+    const nonce = String(auth.nonce ?? "").toLowerCase();
+    if (from !== expected.payer.toLowerCase() || to !== expected.payTo.toLowerCase() || value !== expected.amountBaseUnits) return null;
+    if (!/^0x[0-9a-f]{40}$/.test(from) || !/^0x[0-9a-f]{40}$/.test(to) || !/^0x[0-9a-f]{64}$/.test(nonce)) return null;
+    const validAfter = String(auth.validAfter ?? "");
+    const validBefore = String(auth.validBefore ?? "");
+    if (!/^[0-9]+$/.test(validAfter) || !/^[0-9]+$/.test(validBefore)) return null;
+    if (BigInt(validAfter) > BigInt(nowSeconds) || BigInt(validBefore) <= BigInt(nowSeconds)) return null;
+    return { from, to, value, nonce };
   } catch {
     return null;
   }
@@ -530,17 +648,17 @@ function isSafeEndpoint(url: string): boolean {
   return true;
 }
 
-async function callAgent(step: BindStep, goal: string, injected?: Record<string, unknown>, missionInputs?: Record<string, unknown>): Promise<CallResult> {
+async function callAgent(step: BindStep, goal: string, injected: Record<string, unknown> | undefined, missionInputs: Record<string, unknown> | undefined, remainingBudgetUsdt: number, executionId: string): Promise<CallResult> {
   const endpoint = step.agent.endpoint;
   if (!isSafeEndpoint(endpoint)) {
-    return { output: null, paid: false, error: `unsafe agent endpoint refused: ${endpoint.slice(0, 60)}`, input: {} };
+    return { output: null, paid: false, paymentState: "not_authorized", error: `unsafe agent endpoint refused: ${endpoint.slice(0, 60)}`, input: {} };
   }
   // Prefer the exact, tested params for this agent; then the proven hardcoded map; then infer.
   const mapped = step.boundParams
     ? { body: fillBoundParams(step.boundParams, goal), method: "POST" as const }
     : getParams(step, goal, missionInputs) ?? await inferParams(step.agent.serviceName, step.agentServiceDescription ?? "", endpoint, goal);
   if ("unavailableReason" in mapped && typeof mapped.unavailableReason === "string" && mapped.unavailableReason) {
-    return { output: null, paid: false, error: mapped.unavailableReason, input: mapped.body };
+    return { output: null, paid: false, paymentState: "not_authorized", error: mapped.unavailableReason, input: mapped.body };
   }
   let { body, method } = mapped;
 
@@ -558,7 +676,7 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   }
 
   if (res.status === 200) {
-    return { output: safeJson(res.body), paid: false, input: body };
+    return { output: safeJson(res.body), paid: false, paymentState: "not_authorized", input: body };
   }
   if (res.status !== 402) {
     const repaired = (res.status === 400 || res.status === 422) ? repairParamsFromInputError(body, res.body, goal) : null;
@@ -566,10 +684,10 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
       body = repaired;
       request = applyRequestParams(endpoint, body, replayMethod);
       res = await httpCall(replayMethod, request.url, request.body);
-      if (res.status === 200) return { output: safeJson(res.body), paid: false, input: body };
+      if (res.status === 200) return { output: safeJson(res.body), paid: false, paymentState: "not_authorized", input: body };
     }
     if (res.status !== 402) {
-      return { output: null, paid: false, error: `HTTP ${res.status}: ${res.body.slice(0, 80)}`, input: body };
+      return { output: null, paid: false, paymentState: "not_authorized", error: `HTTP ${res.status}: ${res.body.slice(0, 80)}`, input: body };
     }
   }
 
@@ -580,67 +698,132 @@ async function callAgent(step: BindStep, goal: string, injected?: Record<string,
   // Overcharge guard: never sign a payment bigger than what the plan quoted (with a
   // small tolerance) or the absolute per-call ceiling. This is the fix for the real leak
   // where an agent listed at ~$0.11 demanded $3 in its live challenge.
-  const cost = readChallengeCost(challengeB64);
+  // A syntactically valid challenge payee is not seller authentication. Paid calls require
+  // an exact reviewed marketplace endpoint -> payee identity. Free 200 responses above do not.
+  const reviewedPayee = reviewedPayeeForEndpoint(endpoint);
+  if (!reviewedPayee) {
+    return { output: null, paid: false, paymentState: "not_authorized", error: "paid agent refused: endpoint has no reviewed payee identity", input: body };
+  }
+  const cost = readChallengeCost(challengeB64, request.url, reviewedPayee);
   // FAIL CLOSED on an unreadable challenge (audit H2): if we cannot parse the amount/asset
   // the seller is demanding, we must not sign it blind — the local signer's understanding
   // and the OKX signer's could differ, and an unknown amount could drain the wallet.
   if (!cost) {
-    return { output: null, paid: false, error: "challenge could not be decoded — refusing to sign an unknown payment amount", input: body };
+    return { output: null, paid: false, paymentState: "not_authorized", error: "challenge could not be decoded — refusing to sign an unknown payment amount", input: body };
   }
   const quoted = step.agent.feeAmount || 0;
-  const allowed = Math.max(quoted * 1.5, 0.002); // tolerance for unit rounding on sub-cent quotes
-  if (cost.usdt > allowed || cost.usdt > MAX_ABS_PER_CALL_USDT) {
-    return { output: null, paid: false, error: `overcharge blocked: agent demands $${cost.usdt} (quoted $${quoted}, cap $${Math.min(allowed, MAX_ABS_PER_CALL_USDT)})`, input: body };
+  const allowed = Math.max(quoted + 0.000001, 0.000001);
+  const cap = Math.min(allowed, MAX_ABS_PER_CALL_USDT, Math.max(remainingBudgetUsdt, 0));
+  if (cost.usdt > cap) {
+    return { output: null, paid: false, paymentState: "not_authorized", error: `overcharge blocked: agent demands $${cost.usdt} (quoted $${quoted}, remaining mission budget $${Math.max(remainingBudgetUsdt, 0).toFixed(6)}, cap $${cap.toFixed(6)})`, input: body };
   }
   if (cost.asset && cost.asset !== USDT_ASSET_LC) {
-    return { output: null, paid: false, error: `payment asset mismatch: challenge wants ${cost.asset}, not USDT`, input: body };
+    return { output: null, paid: false, paymentState: "not_authorized", error: `payment asset mismatch: challenge wants ${cost.asset}, not USDT`, input: body };
   }
 
   const auth = await signPayment(challengeB64);
-  if (!auth) return { output: null, paid: false, error: "payment signing failed", input: body };
+  if (!auth) return { output: null, paid: false, paymentState: "not_authorized", error: "payment signing failed", input: body };
 
-  let paidInput = body;
-  const replayWithBody = async (candidateBody: Record<string, unknown>): Promise<HttpResult> => {
-    const candidateRequest = applyRequestParams(endpoint, candidateBody, replayMethod);
-    let candidate = await httpCall(replayMethod, candidateRequest.url, candidateRequest.body, { "PAYMENT-SIGNATURE": auth });
-    if (candidate.status !== 200) candidate = await httpCall(replayMethod, candidateRequest.url, candidateRequest.body, { "X-PAYMENT": auth });
-    if (candidate.status !== 200) candidate = await httpCall(replayMethod, candidateRequest.url, candidateRequest.body, { "Authorization": `X402 ${auth}` });
-    return candidate;
-  };
-
-  const schemaFailures: string[] = [];
-  const rememberFailure = (response: HttpResult, candidateBody: Record<string, unknown>): void => {
-    if (response.status === 400 || response.status === 422) {
-      schemaFailures.push(`HTTP ${response.status} for ${JSON.stringify(candidateBody)} => ${response.body.slice(0, 260)}`);
-    }
-  };
-
-  let paid = await replayWithBody(body);
-  rememberFailure(paid, body);
-  if (paid.status !== 200 && (paid.status === 400 || paid.status === 422)) {
-    for (const candidateBody of repairBodiesForEndpoint(endpoint, goal, body)) {
-      const retry = await replayWithBody(candidateBody);
-      rememberFailure(retry, candidateBody);
-      paid = retry;
-      paidInput = candidateBody;
-      if (retry.status === 200 || retry.status === 402) break;
-    }
+  const signed = decodeSignedDownstreamCredential(auth, {
+    resource: request.url,
+    amountBaseUnits: cost.amountBaseUnits,
+    asset: cost.asset,
+    payTo: cost.payTo,
+    payer: config.payToAddress,
+  });
+  if (!signed) {
+    return { output: null, paid: false, paymentState: "not_authorized", error: "signed payment credential did not exactly match the selected downstream terms", input: body };
   }
-
-  if (paid.status !== 200) {
-    if (schemaFailures.length > 0) {
-      return { output: null, paid: false, error: `seller schema rejected paid replay: ${schemaFailures.join(" | ").slice(0, 900)}`, input: paidInput };
-    }
-    if (paid.status === 402) return payAgentWithCli(endpoint, replayMethod, paidInput, quoted);
-    return { output: null, paid: false, error: `paid call returned ${paid.status}: ${paid.body.slice(0, 220)}`, input: paidInput };
+  const claimKey = authorizationClaimKey(cost.asset, signed.from, signed.nonce);
+  const requestCommitment = createHash("sha256")
+    .update(JSON.stringify({ method: replayMethod, url: request.url, body: request.body }))
+    .digest("hex");
+  const reserved = reservePaymentClaim({
+    key: claimKey,
+    source: "downstream_x402",
+    chain: "eip155:196",
+    token: cost.asset,
+    payer: signed.from,
+    nonce: signed.nonce,
+    amountBaseUnits: cost.amountBaseUnits,
+    executionId,
+    route: `${replayMethod} ${request.url}`,
+    detail: `request_sha256:${requestCommitment}`,
+  });
+  if (!reserved) {
+    return {
+      output: null,
+      paid: false,
+      paymentState: "authorized_ambiguous",
+      paidUsdt: cost.usdt,
+      paidBaseUnits: cost.amountBaseUnits,
+      paymentRecipient: cost.payTo,
+      error: "downstream authorization was already reserved; reconciliation required",
+      input: body,
+    };
   }
+  transitionPaymentClaim(claimKey, ["reserved"], "submitting");
 
-  // Got data. Confirm the payment settled on-chain before calling it "paid".
+  // One authorization, one exact request replay. EIP-3009 does not sign the HTTP body,
+  // so changing method, URL, body, or header convention after signing is forbidden.
+  let paid: HttpResult;
+  try {
+    paid = await httpCall(replayMethod, request.url, request.body, { "PAYMENT-SIGNATURE": auth });
+  } catch (error) {
+    transitionPaymentClaim(claimKey, ["submitting"], "reconciliation_required", {
+      detail: `request_sha256:${requestCommitment}; transport outcome unknown`,
+    });
+    return {
+      output: null,
+      paid: false,
+      paymentState: "authorized_ambiguous",
+      paidUsdt: cost.usdt,
+      paidBaseUnits: cost.amountBaseUnits,
+      paymentRecipient: cost.payTo,
+      error: `authorized downstream transport failed; reconciliation required: ${(error as Error).message}`,
+      input: body,
+    };
+  }
   const settlement = readSettlement(paid.headers);
-  if (settlement && !settlement.settled) {
-    return { output: null, paid: false, error: "payment did not settle on-chain (success=false)", input: body };
+  const txHash = settlement?.txHash;
+  const confirmation: RefundConfirmation = typeof txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(txHash)
+    ? await confirmRefundTransfer(txHash, cost.payTo, cost.amountBaseUnits, undefined, 1, undefined, cost.asset, config.payToAddress)
+    : "pending";
+  const paymentState = classifyDownstreamAuthorization(paid.status, settlement, confirmation);
+
+  if (paymentState !== "settlement_confirmed") {
+    transitionPaymentClaim(claimKey, ["submitting"], "reconciliation_required", {
+      txHash,
+      detail: `request_sha256:${requestCommitment}; HTTP ${paid.status}; chain ${confirmation}`,
+    });
+    return {
+      output: null,
+      paid: false,
+      paymentState,
+      paidUsdt: cost.usdt,
+      paidBaseUnits: cost.amountBaseUnits,
+      txHash,
+      paymentRecipient: cost.payTo,
+      error: `authorized downstream call is financially ambiguous (HTTP ${paid.status}); fallback blocked pending reconciliation`,
+      input: body,
+    };
   }
-  return { output: safeJson(paid.body), paid: true, txHash: settlement?.txHash, input: paidInput };
+
+  transitionPaymentClaim(claimKey, ["submitting"], "settled", {
+    txHash,
+    detail: `request_sha256:${requestCommitment}; exact canonical transfer confirmed`,
+  });
+  return {
+    output: paid.status === 200 ? safeJson(paid.body) : null,
+    paid: true,
+    paymentState,
+    paidUsdt: cost.usdt,
+    paidBaseUnits: cost.amountBaseUnits,
+    txHash,
+    paymentRecipient: cost.payTo,
+    error: paid.status === 200 ? undefined : `settlement confirmed but seller returned HTTP ${paid.status}`,
+    input: body,
+  };
 }
 
 function safeJson(text: string): unknown {
@@ -664,14 +847,42 @@ async function evaluateOutput(step: BindStep, goal: string, output: unknown): Pr
   return { passed: true, detail: structural.detail };
 }
 
-export async function executePlan(plan: BindPlan, payer?: string, presetExecutionId?: string): Promise<BindExecution> {
+function recordRefund(execution: BindExecution, refund: RefundResult): void {
+  execution.refundAmountDueBaseUnits = refund.amountDueBaseUnits;
+  execution.refundAmountSubmittedBaseUnits = refund.amountSubmittedBaseUnits;
+  execution.refundAmountConfirmedBaseUnits = refund.amountConfirmedBaseUnits;
+  execution.refundToken = execution.buyerPayment?.token;
+  execution.refundSender = execution.buyerPayment?.recipient;
+  execution.refundAmountDueUsdt = refund.amountDue;
+  execution.refundState = refund.state;
+  execution.refundReason = refund.reason;
+  execution.refundAmountSubmittedUsdt = refund.amountSubmitted;
+  execution.refundAmountConfirmedUsdt = refund.amountConfirmed;
+  execution.refundTxHash = refund.txHash;
+}
+
+export async function executePlan(
+  plan: BindPlan,
+  payer?: string,
+  presetExecutionId?: string,
+  buyerPayment?: BuyerPaymentEvidence,
+): Promise<BindExecution> {
+  assertOfferedQuoteUnchanged(plan);
   await walletLogin();
 
-  // Guard: never start paying agents unless the wallet can cover the whole plan. This
-  // is what was missing before — an empty wallet used to "execute" and silently fail.
-  const balance = await getUsdtBalance();
-  if (balance !== null && balance < plan.totalPriceUsdt) {
-    throw new InsufficientBalanceError(balance, plan.totalPriceUsdt);
+  // Prove exact solvency before any downstream authorization. The current buyer payment
+  // funds this mission, so exclude only its transaction claim from prior liabilities.
+  const balanceBaseUnits = await getUsdtBalanceBaseUnits();
+  if (balanceBaseUnits === null) throw new WalletBalanceUnavailableError();
+  const agentBudgetBaseUnits = BigInt(plan.quoteSnapshot!.agentBudgetBaseUnits);
+  const excludedClaims = new Set<string>();
+  if (buyerPayment?.txHash && /^0x[0-9a-fA-F]{64}$/.test(buyerPayment.txHash)) {
+    excludedClaims.add(directPaymentClaimKey(buyerPayment.token, buyerPayment.txHash));
+  }
+  const reservedBaseUnits = outstandingPaymentLiabilityBaseUnits(undefined, excludedClaims);
+  const needBaseUnits = agentBudgetBaseUnits + reservedBaseUnits;
+  if (balanceBaseUnits < needBaseUnits) {
+    throw new InsufficientBalanceError(balanceBaseUnits, needBaseUnits, reservedBaseUnits);
   }
 
   // An async mission hands out its executionId before running, so /status can be
@@ -688,6 +899,8 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
     const result: ExecutionResult = {
       step: step.step, agentName: step.agent.name, serviceName: step.agent.serviceName,
       agentId: step.agent.agentId, status: "running",
+      verificationType: step.verificationType,
+      verificationCriteria: step.verificationCriteria,
       startedAt: new Date().toISOString(),
     };
 
@@ -708,7 +921,7 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
     const injected = step.inputMap ? resolveInputMap(step.inputMap, nodeOutputs).params : undefined;
 
     try {
-      let call = await callAgent(step, plan.goal, injected, plan.inputs);
+      let call = await callAgent(step, plan.goal, injected, plan.inputs, remainingAgentBudget(plan, totalPaid), executionId);
       let agent = step.agent;
       // Evaluate = structural check, then (only if it passes) an LLM relevance check. An
       // agent that returns well-formed but off-topic data (whale wallets for a football
@@ -723,33 +936,41 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
       // RELEVANT verified output. A paid-but-bad output is now allowed to fall through to
       // the next candidate, but only under a strict Bind-side risk cap. The buyer still
       // pays only for verified work; failed paid attempts are refunded/absorbed by Bind.
-      const backups = step.candidates?.length ? step.candidates : (step.fallbackAgent ? [step.fallbackAgent] : []);
-      let paidAttempts = call.paid ? 1 : 0;
-      let failedPaidSpend = call.paid && !outcome.passed ? agent.feeAmount : 0;
-      let paidAttemptCost = call.paid ? agent.feeAmount : 0;
+      const configuredBackups = step.candidates?.length ? step.candidates : (step.fallbackAgent ? [step.fallbackAgent] : []);
+      const backups = mayAttemptFallback(call.paymentState) ? configuredBackups : [];
+      const primaryExposed = call.paymentState !== "not_authorized" && call.paymentState !== "nonsettlement_confirmed";
+      let paidAttempts = primaryExposed ? 1 : 0;
+      const primaryCost = primaryExposed ? (call.paidUsdt ?? agent.feeAmount) : 0;
+      let failedPaidSpend = primaryExposed && !outcome.passed ? primaryCost : 0;
+      totalPaid += primaryCost;
       for (const cand of backups) {
         if (outcome.passed) break;
         if (paidAttempts >= MAX_PAID_ATTEMPTS_PER_STEP) break;
-        if (failedPaidSpend >= MAX_FAILED_FALLBACK_SPEND_USDT) break;
+        const missionBudgetRemaining = remainingAgentBudget(plan, totalPaid);
+        const failedSpendRemaining = Math.max(MAX_FAILED_FALLBACK_SPEND_USDT - failedPaidSpend, 0);
+        const authorizationBudget = Math.min(missionBudgetRemaining, failedSpendRemaining);
+        if (authorizationBudget < 0.000001) break;
         const fbStep: BindStep = {
           ...step,
           agent: cand,
           agentServiceDescription: cand.serviceDescription ?? step.fallbackServiceDescription ?? step.agentServiceDescription,
           boundParams: undefined,
         };
-        const fb = await callAgent(fbStep, plan.goal, injected, plan.inputs);
+        const fb = await callAgent(fbStep, plan.goal, injected, plan.inputs, authorizationBudget, executionId);
         const fbOutcome = fb.output === null
           ? { passed: false, detail: fb.error ?? "no output" }
           : await evaluateOutput(fbStep, plan.goal, fb.output);
         attempts.push(attemptFrom(cand, fb, fbOutcome));
-        if (fb.paid) {
+        const fbExposed = fb.paymentState !== "not_authorized" && fb.paymentState !== "nonsettlement_confirmed";
+        if (fbExposed) {
+          const fallbackCost = fb.paidUsdt ?? cand.feeAmount;
           paidAttempts += 1;
-          paidAttemptCost += cand.feeAmount;
-          if (!fbOutcome.passed) failedPaidSpend += cand.feeAmount;
+          totalPaid += fallbackCost;
+          if (!fbOutcome.passed) failedPaidSpend += fallbackCost;
         }
-        if (fbOutcome.passed || fb.paid) {
-          // Keep the best/latest paid attempt on record. If it failed, continue while the
-          // retry budget allows; if it passed, stop immediately with a deliverable.
+        if (fbOutcome.passed || fbExposed) {
+          // Keep the latest financially exposed attempt on record. Ambiguous exposure stops
+          // immediately; confirmed bad work may continue only within the bounded retry budget.
           call = fb;
           agent = cand;
           outcome = fbOutcome;
@@ -757,26 +978,23 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
           result.agentName = cand.name;
           result.serviceName = cand.serviceName;
           result.agentId = cand.agentId;
-          if (fbOutcome.passed) break;
+          if (fbOutcome.passed || !mayAttemptFallback(fb.paymentState)) break;
         }
         // Unpaid failure: leave `call` on the prior attempt and try the next candidate.
       }
 
       result.attempts = attempts;
       result.input = call.input;
+      result.paymentState = call.paymentState;
       if (call.output === null) {
         result.status = "errored";
         result.error = outcome.detail;
       } else {
         result.output = call.output;
         if (call.paid) {
-          // Only claim a verified settlement when we actually have the tx hash from the
-          // agent's payment-response. Without it the money most likely moved (the agent
-          // served paid data), but we must not present an unproven hash as "settled"
-          // (audit C3) — label it honestly so receipts and reputation don't overstate.
-          result.paymentTxHash = call.txHash ?? "settlement_unconfirmed";
-          result.feeUsdt = agent.feeAmount;
-          totalPaid += Math.max(paidAttemptCost, agent.feeAmount);
+          result.paymentTxHash = call.txHash;
+          result.feeUsdt = call.paidUsdt ?? agent.feeAmount;
+          result.feeBaseUnits = call.paidBaseUnits;
         } else {
           result.paymentTxHash = "no_payment_needed";
         }
@@ -811,7 +1029,8 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
   const hasDeliverable = completed > 0 && !/^No agent outputs passed verification/i.test(finalOutput);
 
   const execution: BindExecution = {
-    executionId, planId: plan.planId, goal: plan.goal, payer,
+    executionId, planId: plan.planId, goal: plan.goal, payer, buyerPayment,
+    quoteSnapshot: plan.quoteSnapshot,
     // A planned route can be dropped by safety caps, merchant errors, or a better fallback.
     // If Bind still returns a verified synthesized answer, the buyer got the product.
     status: hasDeliverable ? "completed" : "failed",
@@ -820,30 +1039,32 @@ export async function executePlan(plan: BindPlan, payer?: string, presetExecutio
     createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
   };
 
-  // The buyer only pays for VERIFIED work. Refund the quoted cost of every agent that did
-  // not deliver a passing output — whether it never took payment, or it took payment and
-  // then failed inspection. In the second case Bind absorbs the loss to that agent; that is
-  // the cost of being the trusted layer, and it makes "you never pay for work that fails
-  // verification" actually true. Bind's platform fee is normally earned and stays — EXCEPT
-  // when the mission delivered NOTHING verified: then Bind did not deliver, so the fee is
-  // refunded too (you never pay for a non-answer). Best-effort: a refund failure never fails
-  // the mission.
-  const quotedAgentCost = plan.agentCost ?? plan.steps.reduce((s, x) => s + x.agent.feeAmount, 0);
-  const deliveredCost = stepResults
-    .filter((r) => r.status === "passed")
-    .reduce((s, r) => s + (r.feeUsdt ?? 0), 0);
-  const refundBase = completed === 0 ? quotedAgentCost + (plan.platformFee ?? 0) : quotedAgentCost;
-  const refund = await refundUnspent(refundBase, deliveredCost, payer);
-  if (refund.refunded > 0) {
-    execution.refundedUsdt = refund.refunded;
-    execution.refundTxHash = refund.txHash;
-  }
+  // Exact refund accounting starts from confirmed buyer base units. Confirmed seller
+  // payments count as spent even when their output failed verification. Ambiguous signed
+  // authorizations are withheld until reconciliation proves whether they settled.
+  const ambiguousExposureBaseUnits = downstreamExposureBaseUnits(stepResults, "authorized_ambiguous");
+  const confirmedSellerSpendBaseUnits = downstreamExposureBaseUnits(stepResults, "settlement_confirmed");
+  execution.unresolvedAuthorizationExposureUsdt = Number(ambiguousExposureBaseUnits) / 1e6;
+  const amountReceivedBaseUnits = BigInt(buyerPayment?.amountBaseUnits ?? "0");
+  const earnedPlatformFeeBaseUnits = hasDeliverable ? BigInt(plan.quoteSnapshot!.platformFeeBaseUnits) : 0n;
+  const refundableBaseUnits = amountReceivedBaseUnits
+    - earnedPlatformFeeBaseUnits
+    - confirmedSellerSpendBaseUnits
+    - ambiguousExposureBaseUnits;
+  const refund = await refundExactBaseUnits(
+    (refundableBaseUnits > 0n ? refundableBaseUnits : 0n).toString(),
+    payer,
+    executionId,
+    { tokenAddress: buyerPayment?.token, senderAddress: buyerPayment?.recipient },
+  );
+  recordRefund(execution, refund);
 
   // Anchor a signed receipt of the whole execution on X Layer (real tx).
   const anchor = await anchorExecution(execution);
   if (anchor) {
     execution.anchorTxHash = anchor.txHash;
-    execution.finalReportUrl = anchor.reportUrl;
+    execution.receiptVersion = anchor.receiptVersion;
+    execution.receiptSha256 = anchor.receiptSha256;
   }
 
   return execution;

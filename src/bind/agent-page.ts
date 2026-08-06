@@ -1,11 +1,6 @@
-// Public agent track-record page — trybind.xyz/a/:agentId
-//
-// The seller side of the moat. Every marketplace agent Bind has ever hired gets a public
-// page showing its earned record: verified rate, hires, USDT actually received, and the
-// hire-by-hire evidence with settlement tx hashes. Sellers get an embed snippet for a
-// live score badge — a good score is real advertising, and because every data point is a
-// paid on-chain mission, it cannot be faked or bought. Sellers wanting a better badge
-// must deliver verified work through Bind: the flywheel.
+// Public agent track-record page. Public evidence uses commitments rather than raw buyer
+// goals or verification text. Settlement references are shown only when a transaction hash
+// was recorded; attempts without one remain visible but are not presented as paid proof.
 import type { AgentRep } from "./reputation.js";
 
 const EXPLORER = "https://www.oklink.com/xlayer/tx/";
@@ -16,6 +11,15 @@ function esc(s: unknown): string {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+function finiteNonnegative(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function count(value: unknown): string {
+  const n = finiteNonnegative(value);
+  return Number.isSafeInteger(n) ? String(n) : "0";
+}
+
 export function scoreColor(passRate: number, missions: number): string {
   if (missions < 2) return "#6e7781";
   if (passRate >= 0.8) return "#2ea44f";
@@ -24,15 +28,21 @@ export function scoreColor(passRate: number, missions: number): string {
 }
 
 export function scoreLabel(rep: AgentRep | null): string {
-  if (!rep || rep.missions < 2) return "no track record yet";
-  return `${Math.round(rep.passRate * 100)}% verified · ${rep.missions} hires`;
+  const missions = finiteNonnegative(rep?.missions);
+  const passRate = Math.min(finiteNonnegative(rep?.passRate), 1);
+  if (!rep || missions < 2) return "no track record yet";
+  return `${Math.round(passRate * 100)}% verified · ${count(missions)} recorded calls`;
 }
 
-type Evidence = Array<{ at: string; goal: string; status: string; feeUsdt?: number; settlementTx?: string; detail?: string }>;
+type Evidence = Array<{ at: string; evidenceId: string; serviceName?: string; status: string; feeUsdt?: number; settlementReference?: string }>;
 
 export function renderAgentPage(agentId: string, rep: AgentRep | null, evidence: Evidence, baseUrl: string): string {
   const name = rep?.name ?? `Agent #${agentId}`;
-  const color = rep ? scoreColor(rep.passRate, rep.missions) : "#6e7781";
+  const missions = finiteNonnegative(rep?.missions);
+  const passed = finiteNonnegative(rep?.passed);
+  const fees = finiteNonnegative(rep?.feesWithSettlementReferenceUsdt);
+  const passRate = Math.min(finiteNonnegative(rep?.passRate), 1);
+  const color = rep ? scoreColor(passRate, missions) : "#6e7781";
   const badgeUrl = `${baseUrl}/badge/agent/${agentId}.svg`;
   const pageUrl = `${baseUrl}/a/${agentId}`;
   const embed = `<a href="${pageUrl}"><img src="${badgeUrl}" alt="Bind track record" /></a>`;
@@ -40,14 +50,14 @@ export function renderAgentPage(agentId: string, rep: AgentRep | null, evidence:
   const rows = evidence.map((e) => `<div class="step">
       <div class="step-head">
         <span class="dot" style="background:${e.status === "passed" ? "#4c9a5f" : "#b0483d"}"></span>
-        <b>${esc(e.goal.slice(0, 70))}${e.goal.length > 70 ? "…" : ""}</b>
+        <b>${esc(e.serviceName ?? "Mission step")}</b>
         <span class="right">${e.status === "passed" ? "verified" : esc(e.status)}</span>
       </div>
       <div class="step-meta">
-        ${esc(e.at.slice(0, 10))}
-        ${e.feeUsdt != null ? ` · paid $${esc(e.feeUsdt.toFixed(3))}` : ""}
-        ${e.settlementTx ? ` · <a href="${EXPLORER}${esc(e.settlementTx)}" target="_blank" rel="noopener">${esc(e.settlementTx.slice(0, 10))}…</a>` : ""}
-        ${e.status !== "passed" && e.detail ? `<div class="why">${esc(e.detail.slice(0, 120))}</div>` : ""}
+        ${esc(String(e.at ?? "").slice(0, 10))}
+        · evidence ${esc(String(e.evidenceId ?? "").slice(0, 18))}…
+        ${e.feeUsdt != null ? ` · recorded $${finiteNonnegative(e.feeUsdt).toFixed(3)}` : ""}
+        ${e.settlementReference ? ` · settlement reference <a href="${EXPLORER}${esc(e.settlementReference)}" target="_blank" rel="noopener">${esc(e.settlementReference.slice(0, 10))}…</a>` : " · no settlement reference"}
       </div>
     </div>`).join("");
 
@@ -55,7 +65,7 @@ export function renderAgentPage(agentId: string, rep: AgentRep | null, evidence:
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(name)} — Bind track record</title>
-<meta name="description" content="Earned on paid, verified Bind missions on X Layer. Every data point has an on-chain receipt.">
+<meta name="description" content="Bind execution history. Settlement transaction links appear when available.">
 <style>
   :root { --ink:#16120b; --panel:#1d1810; --line:#c8a45a33; --gilt:#c8a45a; --ivory:#e7ddc7; --dim:#a89a7e; }
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -84,19 +94,19 @@ export function renderAgentPage(agentId: string, rep: AgentRep | null, evidence:
   <div class="score">${esc(scoreLabel(rep))}</div>
 
   ${rep ? `<div class="stats">
-    <div class="stat"><b>${rep.missions}</b><span>times hired</span></div>
-    <div class="stat"><b>${rep.passed}</b><span>outputs verified</span></div>
-    <div class="stat"><b>$${rep.paidUsdt.toFixed(3)}</b><span>USDT earned via Bind</span></div>
-    <div class="stat"><b>${Math.round(rep.passRate * 100)}%</b><span>verified rate</span></div>
-  </div>` : `<p style="color:var(--dim);margin-bottom:22px">Bind has not hired this agent yet. The record starts with its first paid mission.</p>`}
+    <div class="stat"><b>${count(missions)}</b><span>recorded calls</span></div>
+    <div class="stat"><b>${count(passed)}</b><span>outputs verified</span></div>
+    <div class="stat"><b>$${fees.toFixed(3)}</b><span>fees with settlement references</span></div>
+    <div class="stat"><b>${Math.round(passRate * 100)}%</b><span>verified rate</span></div>
+  </div>` : `<p style="color:var(--dim);margin-bottom:22px">Bind has not recorded a call to this agent yet. The record starts with its first observed call.</p>`}
 
-  <div class="panel"><div class="eyebrow">Every hire, on the record</div>${rows || '<div class="step-meta">No missions recorded.</div>'}</div>
+  <div class="panel"><div class="eyebrow">Recorded calls</div>${rows || '<div class="step-meta">No calls recorded.</div>'}</div>
 
   <div class="panel"><div class="eyebrow">For this agent's builder — embed your live score</div>
-    <p style="font-size:14px;margin-bottom:10px"><img src="${badgeUrl}" alt="Bind track record badge" style="vertical-align:middle"/> &nbsp;This badge updates with every paid mission. It cannot be bought — only earned.</p>
+    <p style="font-size:14px;margin-bottom:10px"><img src="${badgeUrl}" alt="Bind track record badge" style="vertical-align:middle"/> &nbsp;This badge reflects Bind's recorded verification history. Settlement links appear when available.</p>
     <pre>${esc(embed)}</pre>
   </div>
 
-  <div class="foot">Records earned on real, paid missions run by <a href="https://trybind.xyz">Bind</a> — agent #4735 on the OKX marketplace · <a href="https://x.com/trybindX" target="_blank" rel="noopener">@trybindX</a></div>
+  <div class="foot">Records observed during Bind executions. Settlement links are shown when available · <a href="https://trybind.xyz">Bind</a> · agent #4735 on the OKX marketplace · <a href="https://x.com/trybindX" target="_blank" rel="noopener">@trybindX</a></div>
 </div></body></html>`;
 }

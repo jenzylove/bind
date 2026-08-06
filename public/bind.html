@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bind — The general contractor for the agent economy</title>
-<meta name="description" content="Hand Bind a goal. It commissions a vetted crew of on-chain agents, pays each via x402, verifies every output, and delivers one finished result with an on-chain receipt.">
-<meta property="og:title" content="Bind — The general contractor for the agent economy">
-<meta property="og:description" content="Describe a goal. Bind commissions a vetted crew of on-chain agents on X Layer, pays each via x402, inspects every output, and delivers one finished result — with an on-chain receipt for every payment.">
+<title>Bind — Verified agent crews, one deliverable</title>
+<meta name="description" content="Hand Bind a goal. It commissions a vetted crew, records agent settlement evidence, verifies outputs, and delivers one result with a receipt commitment.">
+<meta property="og:title" content="Bind — Verified agent crews, one deliverable">
+<meta property="og:description" content="Describe a goal. Bind commissions a crew on X Layer, inspects each output, records settlement evidence, and returns one result with a receipt commitment.">
 <meta property="og:image" content="/brand/bind-wordmark-card.png">
 <meta name="twitter:card" content="summary_large_image">
 <!-- Favicon: the Bind seal, inlined so it needs no static route -->
@@ -240,10 +241,9 @@
     <div class="hero-copy">
       <div class="pill hero-provenance">Built for OKX AI Genesis <span>On X Layer</span></div>
       <h1 class="headline">Hire agent crews that actually deliver.</h1>
-      <p class="sub">Describe the outcome. Bind plans the crew, pays vetted marketplace agents on X Layer, verifies every result, and returns one finished deliverable with an on-chain receipt.</p>
+      <p class="sub">Describe the outcome. Bind plans a crew, records marketplace settlement evidence, verifies each result, and returns one deliverable with a receipt commitment.</p>
       <div class="hero-cta">
         <button class="btn-cyan" onclick="openApp()">Start a mission</button>
-        <a class="btn-outline" href="?exec=1dca02fd-991c-44c0-88c6-717656cfdeca">See proof</a>
       </div>
       <div class="chips" style="justify-content:center;max-width:620px;margin:18px auto 0">
         <span class="chip" onclick="openApp('Give me a market brief on Bitcoin: crowd positioning, funding, and sentiment')">BTC market brief</span>
@@ -256,16 +256,16 @@
       <div class="product-shot">
         <div class="browser-bar"><div class="traffic"><span></span><span></span><span></span></div><span>bind://mission-console</span></div>
         <div class="terminal">
-          <div class="rail"><div class="mini-line short"></div><div class="mini-line"></div><div class="mini-line"></div><div class="rail-card">Goal<br><strong>Market brief on BTC</strong></div><div class="rail-card">Quote<br><strong>$0.143 USDT</strong></div></div>
+          <div class="rail"><div class="mini-line short"></div><div class="mini-line"></div><div class="mini-line"></div><div class="rail-card">Example goal<br><strong>Market brief on BTC</strong></div><div class="rail-card">Example quote<br><strong>$0.143 USDT</strong></div></div>
           <div class="console-grid">
-            <div class="mission-row"><span>Security &amp; risk scan</span><span>x402 paid</span><span>verified</span></div>
-            <div class="mission-row"><span>Market data specialist</span><span>x402 paid</span><span>verified</span></div>
-            <div class="mission-row"><span>Sentiment oracle</span><span>x402 paid</span><span>verified</span></div>
-            <div class="flow-line"><div class="flow-node"><b>Plan</b>Pick the crew</div><div class="flow-node"><b>Pay</b>Settle on X Layer</div><div class="flow-node"><b>Verify</b>Drop bad output</div><div class="flow-node"><b>Deliver</b>Anchor receipt</div></div>
+            <div class="mission-row"><span>Security &amp; risk scan</span><span>settlement recorded</span><span>output passed</span></div>
+            <div class="mission-row"><span>Market data specialist</span><span>settlement recorded</span><span>output passed</span></div>
+            <div class="mission-row"><span>Sentiment oracle</span><span>settlement recorded</span><span>output passed</span></div>
+            <div class="flow-line"><div class="flow-node"><b>Plan</b>Pick the crew</div><div class="flow-node"><b>Call</b>Use x402</div><div class="flow-node"><b>Verify</b>Drop bad output</div><div class="flow-node"><b>Record</b>Commit receipt</div></div>
           </div>
         </div>
       </div>
-      <div class="side-card right"><div class="mini-line"></div><div class="mini-line short"></div><span class="mini-pill">receipt anchored</span></div>
+      <div class="side-card right"><div class="mini-line"></div><div class="mini-line short"></div><span class="mini-pill">receipt commitment</span></div>
     </div>
   </section>
   <section class="white-band">
@@ -274,20 +274,19 @@
       <p class="section-eyebrow">Agent orchestration decoded</p>
       <h2 class="section-h">The marketplace has sellers. Bind is the buyer.</h2>
       <p class="section-copy">Instead of asking users to discover agents, negotiate payments, retry broken endpoints, and stitch outputs together, Bind turns a goal into a verified multi-agent workflow.</p>
-      <div class="wide-showcase"><div class="light-screen"><div class="screen-header"><span class="screen-tab">Real mission</span><span class="screen-tab">Verified crew</span><span class="screen-tab">On-chain receipt</span><a class="screen-tab" id="showcaseLink" href="/m/1dca02fd-991c-44c0-88c6-717656cfdeca" target="_blank" rel="noopener" style="margin-left:auto">Full receipt →</a></div><div class="mock-dashboard interactive-mock"><div class="mock-panel mock-list"><p class="mock-label">The crew Bind hired</p><div id="realCrew"></div></div><div class="mock-panel mock-output"><p class="mock-label" id="realLabel">Deliverable</p><h3 id="realTitle">Loading a real mission…</h3><p id="realBody"></p><div class="mock-signal-grid" id="realSignals"></div></div><div class="mock-panel mock-proof"><p class="mock-label">Receipt</p><div class="mock-receipt"><div><span>Agent</span><b id="realReceiptAgent">—</b></div><div><span>Verified</span><b id="realReceiptStatus">—</b></div><div><span>Settlement</span><b id="realReceiptTx">—</b></div><div><span>Anchored</span><b id="realReceiptAnchor">—</b></div></div><div class="mock-cta"><span id="realReceiptCta">Every hash is a real transaction on X Layer</span></div></div></div></div></div>
       <div class="quote-grid">
         <div>
-          <p class="quote">Most agents on the marketplace do not work. We paid our way across it to find out which ones do.</p>
+          <p class="quote">Marketplace agents vary widely in reliability. Bind records each attempt so routing can improve from evidence.</p>
           <div class="metrics">
-            <div class="metric"><b id="statHires">81</b><span>paid agent hires</span></div>
-            <div class="metric"><b id="statAgents">14</b><span>agents that deliver</span></div>
+            <div class="metric"><b id="statHires">—</b><span>recorded call attempts</span></div>
+            <div class="metric"><b id="statAgents">—</b><span>agents that deliver</span></div>
             <div class="metric"><b>0</b><span>failed outputs shipped</span></div>
           </div>
         </div>
         <div class="quote-card">
           <div class="seal-mark">B</div>
           <strong>Earned, not claimed</strong>
-          <span>Every hire is a paid, verified, on-chain data point. Agents that stop delivering get fired. <a href="/bind/agents" target="_blank" rel="noopener">Read the ledger</a>.</span>
+          <span>Recorded calls include the verification outcome, fee evidence, and a seller-provided settlement transaction reference when available. <a href="/bind/agents" target="_blank" rel="noopener">Read the ledger</a>.</span>
         </div>
       </div>
     </div>
@@ -297,9 +296,9 @@
     <div class="band-inner">
       <p class="section-eyebrow">Deploy the buyer</p>
       <h2 class="section-h">Plan, pay, verify, deliver. In that order.</h2>
-      <p class="section-copy">Bind spends only after the buyer payment is verified, caps live agent overcharges, and excludes any output that fails inspection.</p>
-      <div class="deploy-panel"><div class="deploy-table"><div class="head"><span>step</span><span>agent role</span><span>payment</span><span>status</span></div><div><span>01</span><span>Marketplace routing</span><span>quote locked</span><span>ready</span></div><div><span>02</span><span>Data specialist</span><span>x402</span><span>passed</span></div><div><span>03</span><span>Sentiment specialist</span><span>x402</span><span>passed</span></div><div><span>04</span><span>Receipt anchor</span><span>X Layer</span><span>final</span></div></div></div>
-      <div class="steps-grid"><div class="step-card"><p class="n">01</p><p class="t">Plan</p><p class="d">AI routing picks a small, complementary crew from the tested payable set.</p></div><div class="step-card"><p class="n">02</p><p class="t">Execute</p><p class="d">Each call is paid through x402 only after the buyer funds the mission.</p></div><div class="step-card"><p class="n">03</p><p class="t">Deliver</p><p class="d">Verified outputs are synthesized into one answer and anchored on-chain.</p></div></div>
+      <p class="section-copy">Bind records the buyer payment state before execution, caps live agent overcharges, and excludes any output that fails inspection.</p>
+      <div class="deploy-panel"><div class="deploy-table"><div class="head"><span>step</span><span>agent role</span><span>payment</span><span>status</span></div><div><span>01</span><span>Marketplace routing</span><span>quote locked</span><span>ready</span></div><div><span>02</span><span>Data specialist</span><span>x402</span><span>passed</span></div><div><span>03</span><span>Sentiment specialist</span><span>x402</span><span>passed</span></div><div><span>04</span><span>Receipt commitment</span><span>X Layer</span><span>recorded</span></div></div></div>
+      <div class="steps-grid"><div class="step-card"><p class="n">01</p><p class="t">Plan</p><p class="d">AI routing picks a small, complementary crew from the tested payable set.</p></div><div class="step-card"><p class="n">02</p><p class="t">Execute</p><p class="d">Paid calls use x402 after the buyer payment state is recorded.</p></div><div class="step-card"><p class="n">03</p><p class="t">Deliver</p><p class="d">Passed outputs are synthesized into one answer, committed in a receipt, and submitted for anchoring.</p></div></div>
     </div>
   </section>
 
@@ -308,7 +307,7 @@
       <p class="section-eyebrow">Unleash your inner operator</p>
       <h2 class="section-h">The developer console for the agent economy.</h2>
       <p class="section-copy">Under the polished mission flow is a pragmatic payment-and-verification harness built for messy third-party agents.</p>
-      <div class="dev-grid"><div class="dark-card"><strong>Pay only what was quoted</strong><p>Live 402 challenges are decoded before signing, with hard caps to block surprise overcharges.</p></div><div class="dark-card"><strong>Trust the receipt</strong><p>Execution history, payment hashes, verified outputs, and the final report are stored together.</p></div></div>
+      <div class="dev-grid"><div class="dark-card"><strong>Cap live charges</strong><p>Live 402 challenges are decoded before signing, with quote-relative and absolute caps to block surprise overcharges.</p></div><div class="dark-card"><strong>Reproduce the receipt</strong><p>Integrity commitments bind execution inputs, outputs, verdicts, settlement references, refunds, and the final report.</p></div></div>
       <div class="integration-row"><span class="integration">OKX</span><span class="integration">402</span><span class="integration">XL</span><span class="integration">AI</span><span class="integration">TEE</span><span class="integration">API</span></div>
     </div>
   </section>
@@ -353,16 +352,9 @@
         </div>
         <div class="goal-actions">
           <button class="btn-cyan" onclick="createPlan()" id="planBtn">Plan workflow</button>
-          <a class="btn-outline" href="?exec=1dca02fd-991c-44c0-88c6-717656cfdeca" style="text-decoration:none;display:flex;align-items:center;justify-content:center">See a real mission →</a>
         </div>
         <p style="margin-top:10px;font-size:12.5px;color:var(--ivory-dim)">Pay in USDT on X Layer. No gas needed. <a href="https://web3.okx.com/xlayer/bridge" target="_blank" rel="noopener">New to X Layer? Bridge in →</a></p>
         <div class="error-msg" id="errorMsg"></div>
-      </div>
-
-      <!-- Wallet-keyed mission history: appears when a wallet with past missions connects -->
-      <div class="goal-card" id="historyCard" style="max-width:900px;margin:18px auto 0;display:none">
-        <label class="goal-label">Your missions</label>
-        <div id="historyList" style="font-size:13.5px"></div>
       </div>
 
       <div class="console" id="consoleSection">
@@ -387,8 +379,8 @@
             <div class="line"><span class="label">Agents used</span><span class="value" id="receiptAgents">—</span></div>
             <div class="line"><span class="label">Total cost</span><span class="value" id="receiptTotal">0 USDT</span></div>
             <div class="line"><span class="label">Execution ID</span><span class="value" id="receiptId">—</span></div>
-            <div class="line" id="refundLine" style="display:none"><span class="label">Refunded (unused budget)</span><span class="value" id="receiptRefund">—</span></div>
-            <div class="line"><span class="label">On-chain anchor</span><span class="value" id="receiptAnchor">—</span></div>
+            <div class="line" id="refundLine" style="display:none"><span class="label">Refund record</span><span class="value" id="receiptRefund">—</span></div>
+            <div class="line"><span class="label">Anchor submission</span><span class="value" id="receiptAnchor">—</span></div>
             <div class="receipt-links">
               <button onclick="downloadCard()">Download receipt card →</button>
               <button onclick="shareOnX()">Share on X →</button>
@@ -433,25 +425,6 @@ function setWalletBtn() {
   if (!b) return;
   b.textContent = wallet.address ? `${wallet.address.slice(0,6)}…${wallet.address.slice(-4)}` : 'Connect wallet';
   b.title = wallet.address ? 'Click to disconnect' : 'Connect a wallet to pay for missions';
-  loadHistory();
-}
-
-// Mission history for the connected wallet — every past commission with its receipt page.
-async function loadHistory() {
-  const card = document.getElementById('historyCard'), list = document.getElementById('historyList');
-  if (!card || !list) return;
-  if (!wallet.address) { card.style.display = 'none'; return; }
-  try {
-    const j = await (await fetch('/bind/history/' + wallet.address)).json();
-    if (!j.missions || !j.missions.length) { card.style.display = 'none'; return; }
-    list.innerHTML = j.missions.slice(0, 8).map(m =>
-      `<div style="display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--navy-border)">
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(m.goal||'').slice(0,80).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>
-        <span style="color:var(--ivory-dim);white-space:nowrap">${m.status === 'completed' ? '✓ complete' : m.status}${m.refundedUsdt ? ' · refunded' : ''}</span>
-        <a href="/m/${m.executionId}" target="_blank" rel="noopener" style="white-space:nowrap">receipt →</a>
-      </div>`).join('');
-    card.style.display = 'block';
-  } catch (e) { card.style.display = 'none'; }
 }
 
 // Clicking the pill connects when disconnected, and disconnects when connected.
@@ -537,9 +510,20 @@ async function ensureXLayer() {
   }
 }
 
-// Sends the plan's quoted USDT total to Bind's wallet, returns the tx hash once the
-// transaction is mined AND succeeded.
-async function payForPlan(cfg) {
+function canonicalIntent(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalIntent).join(',')}]`;
+  const excluded = new Set(['paymentAuth', 'paymentTxHash']);
+  return `{${Object.keys(value).filter(k => value[k] !== undefined && !excluded.has(k)).sort().map(k => `${JSON.stringify(k)}:${canonicalIntent(value[k])}`).join(',')}}`;
+}
+async function missionIntentNonce(route, body) {
+  const bytes = new TextEncoder().encode(`bind.payment-intent.v1\n${String(route).trim()}\n${canonicalIntent(body || {})}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return '0x' + [...digest].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Signs the plan's quoted USDT total for this exact mission request.
+async function payForPlan(cfg, requestBody) {
   // Never build a transfer without a real destination: an empty payTo would pad to the
   // zero address and the USDT transfer would revert (burning gas for nothing).
   if (!/^0x[0-9a-fA-F]{40}$/.test(cfg.payTo || '')) {
@@ -557,39 +541,22 @@ async function payForPlan(cfg) {
   // submits it on chain, paying the gas itself. No OKB needed, works on mobile wallets.
   try {
     addLog(`Sign to authorize $${currentPlan.totalPriceUsdt.toFixed(3)} USDT (no gas needed)…`, 'info');
-    const auth = await signGaslessPayment(cfg, amount);
-    addLog('Payment authorized by signature. Bind settles it on-chain for you.', 'paid');
+    const intentNonce = await missionIntentNonce('/bind/mission', requestBody);
+    const auth = await signGaslessPayment(cfg, amount, intentNonce);
+    addLog('Payment authorized for this exact mission. Bind settles it on-chain for you.', 'paid');
     return { paymentAuth: auth };
   } catch (e) {
-    // A rejection is the user's answer; anything else falls back to a direct transfer.
     if (e && (e.code === 4001 || /reject|denied|cancel/i.test(e.message || ''))) throw new Error('Signature rejected in wallet.');
-    addLog('Signature flow unavailable in this wallet, falling back to a direct transfer (needs a little OKB for gas)…', 'info');
+    throw new Error('This wallet could not sign Bind’s exact mission authorization. No payment was sent. Try a wallet with EIP-712 support.');
   }
-
-  const to = cfg.payTo.toLowerCase().replace(/^0x/, '').padStart(64, '0');
-  const amt = amount.toString(16).padStart(64, '0');
-  const data = '0xa9059cbb' + to + amt;
-  addLog(`Requesting $${currentPlan.totalPriceUsdt.toFixed(3)} USDT payment approval…`, 'info');
-  const txHash = await eth().request({ method: 'eth_sendTransaction', params: [{
-    from: wallet.address, to: cfg.usdtAsset, data,
-  }] });
-  addLog(`Payment sent: ${txHash.slice(0,10)}…`, 'paid');
-  addLog('Waiting for on-chain confirmation…', 'info');
-  const ok = await waitForReceipt(txHash);
-  // A reverted tx still gets a blockNumber — only status 0x1 means it actually paid.
-  if (ok === false) throw new Error('The payment transaction failed on-chain (reverted). You were not charged — check your USDT balance and that you have OKB for gas.');
-  if (ok === null) throw new Error('Payment not confirmed in time. If it lands, retry — you will not be double-charged.');
-  addLog('Payment confirmed on X Layer', 'verified');
-  return { paymentTxHash: txHash };
 }
 
 // EIP 3009 TransferWithAuthorization: a typed-data signature that authorizes exactly this
 // payment (amount, recipient, one-time nonce, 1h expiry). Signing is free; the server
 // submits it on-chain. The domain name/version must match the token contract's EIP-712
 // domain — served by /bind/config so there is one source of truth.
-async function signGaslessPayment(cfg, amount) {
+async function signGaslessPayment(cfg, amount, nonce) {
   const now = Math.floor(Date.now() / 1000);
-  const nonce = '0x' + [...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, '0')).join('');
   const message = {
     from: wallet.address, to: cfg.payTo, value: amount.toString(),
     validAfter: '0', validBefore: String(now + 3600), nonce,
@@ -654,7 +621,7 @@ function hireLabel(step) {
 function showError(m) { const e = document.getElementById('errorMsg'); e.textContent = m; e.classList.add('visible'); }
 function hideError() { document.getElementById('errorMsg').classList.remove('visible'); }
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1900); }
-function txLink(h) { return h && h.startsWith('0x') ? `<a href="${EXPLORER}${h}" target="_blank" rel="noopener">${h.slice(0,10)}…${h.slice(-6)}</a>` : (h || '—'); }
+function txLink(h) { return typeof h === 'string' && /^0x[0-9a-fA-F]{64}$/.test(h) ? `<a href="${EXPLORER}${h}" target="_blank" rel="noopener">${h.slice(0,10)}…${h.slice(-6)}</a>` : (h ? 'unconfirmed' : '—'); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function fetchJson(url, options = {}, timeoutMs = 25000) {
   const controller = new AbortController();
@@ -677,12 +644,29 @@ function addLog(text, type) {
 }
 function renderLog() {
   const body = document.getElementById('logBody');
-  if (logs.length === 0) { body.innerHTML = '<p class="log-empty">Describe a goal and plan a workflow to start.</p>'; return; }
-  body.innerHTML = logs.map(l => `
-    <div class="log-line">
-      <span class="log-time">${l.time}</span>
-      <span class="log-text ${l.type}">${l.type === 'verified' ? '✓ ' : l.type === 'paid' ? '● ' : ''}${l.text}</span>
-    </div>`).join('');
+  body.replaceChildren();
+  if (logs.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'log-empty';
+    empty.textContent = 'Describe a goal and plan a workflow to start.';
+    body.append(empty);
+    return;
+  }
+  const allowedTypes = new Set(['info', 'verified', 'paid', 'error', 'success', 'search']);
+  logs.forEach((entry) => {
+    const type = allowedTypes.has(entry.type) ? entry.type : 'info';
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = String(entry.time || '');
+    const text = document.createElement('span');
+    text.className = `log-text ${type}`;
+    const prefix = type === 'verified' ? '✓ ' : type === 'paid' ? '● ' : '';
+    text.textContent = prefix + String(entry.text || '');
+    line.append(time, text);
+    body.append(line);
+  });
   body.scrollTop = body.scrollHeight;
 }
 
@@ -724,16 +708,24 @@ async function createPlan() {
     // Show capabilities, not vendor names/prices — the crew is Bind's to assemble, not a
     // shopping list to copy. Real agent identities + tx proof appear after payment.
     const steps = document.getElementById('steps');
-    steps.innerHTML = '';
+    steps.replaceChildren();
     data.plan.steps.forEach((step) => {
-      steps.innerHTML += `
-        <div class="step-row" data-step="${step.step}">
-          <span class="step-dot"></span>
-          <div class="step-info">
-            <div class="name">${hireLabel(step)}</div>
-            <div class="detail">${capLabel(step.agent.category)} · ${step.track ? step.track : 'vetted, verified before it counts'}</div>
-          </div>
-        </div>`;
+      const row = document.createElement('div');
+      row.className = 'step-row';
+      row.dataset.step = String(Number.isInteger(step.step) ? step.step : '');
+      const dot = document.createElement('span');
+      dot.className = 'step-dot';
+      const info = document.createElement('div');
+      info.className = 'step-info';
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = String(hireLabel(step));
+      const detail = document.createElement('div');
+      detail.className = 'detail';
+      detail.textContent = `${capLabel(step.agent?.category)} · ${step.track || 'vetted, verified before it counts'}`;
+      info.append(name, detail);
+      row.append(dot, info);
+      steps.append(row);
     });
     document.getElementById('consoleEyebrow').textContent = 'Mission plan';
     const cfg = await loadCfg();
@@ -758,7 +750,8 @@ async function executePlan() {
   const btn = document.getElementById('execBtn');
   const cfg = await loadCfg();
 
-  // Buyer-pays flow: connect wallet and pay the quote on-chain before executing.
+  const requestBody = { planId: currentPlan.planId, async: true };
+  // Buyer-pays flow: connect wallet and sign the exact mission intent before settlement.
   let payment = {};
   if (cfg.requiresPayment && currentPlan.totalPriceUsdt > 0) {
     if (cfg.paymentConfigured === false || !cfg.payTo || !cfg.usdtAsset) {
@@ -772,7 +765,7 @@ async function executePlan() {
     }
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Awaiting payment…';
     try {
-      payment = await payForPlan(cfg);
+      payment = await payForPlan(cfg, requestBody);
     } catch (e) {
       addLog(`Payment failed: ${e.message || 'rejected'}`, 'error');
       showError(`Payment failed or was rejected: ${e.message || ''}`);
@@ -792,7 +785,7 @@ async function executePlan() {
     // works in the background — long missions no longer die at request timeouts.
     const { res, data } = await fetchJson('/bind/mission', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planId: currentPlan.planId, ...payment, async: true }),
+      body: JSON.stringify({ ...requestBody, ...payment }),
     }, 30000);
     if (!res.ok && res.status !== 202) { addLog(`Execution failed: ${data.message || ''}`, 'error'); showError(data.message || 'Execution failed'); btn.disabled = false; btn.innerHTML = 'Execute mission →'; return; }
     let final = data;
@@ -807,7 +800,7 @@ async function executePlan() {
         } catch (e) { /* transient poll failure — keep waiting */ }
       }
       if (final.status === 'running') {
-        showError(`The mission is still running. Check back at /m/${data.executionId} — your payment is safe and refunds apply as usual.`);
+        showError(`The mission is still running. Keep execution ID ${data.executionId}. Any refund submission evidence will appear on the mission record.`);
         btn.disabled = false; btn.innerHTML = 'Execute mission →';
         return;
       }
@@ -819,28 +812,42 @@ async function executePlan() {
 
 async function renderExecution(data, rows) {
   currentExecution = data;
-  for (let i = 0; i < (data.stepResults || []).length; i++) {
-    const sr = data.stepResults[i];
+  const allowedStatuses = new Set(['passed', 'failed', 'errored', 'skipped', 'blocked']);
+  for (let i = 0; i < (data.services || []).length; i++) {
+    const sr = data.services[i];
     const row = rows[i];
-    if (row) { row.classList.remove('running'); row.classList.add(sr.status); }
-    if (sr.status === 'passed') { addLog(`Paid ${sr.serviceName || sr.agentName}`, 'paid'); addLog('Verification passed', 'verified'); }
-    else { addLog(`${sr.serviceName || sr.agentName} — ${sr.error || sr.status}`, 'error'); }
+    const status = allowedStatuses.has(sr.status) ? sr.status : 'unknown';
+    if (row) { row.classList.remove('running'); row.classList.add(status); }
+    if (sr.status === 'passed') {
+      if (sr.settlementEvidence === 'confirmed' && sr.settlementTxHash) addLog(`Settlement confirmed for ${sr.service}`, 'paid');
+      else if (sr.settlementEvidence === 'none') addLog(`No confirmed settlement for ${sr.service}`, 'info');
+      else addLog(`Settlement ${sr.settlementEvidence.replace('_', ' ')} for ${sr.service}`, 'info');
+      addLog('Verification passed', 'verified');
+    }
+    else { addLog(`${sr.service} — ${sr.status}`, 'error'); }
     await sleep(120);
   }
-  addLog(`Mission complete. ${data.completedSteps}/${data.totalSteps} passed.`, 'success');
+  addLog(`Mission complete. ${data.progress.completedSteps}/${data.progress.totalSteps} passed.`, 'success');
 
   rows.forEach((row, i) => {
-    const sr = (data.stepResults || [])[i];
+    const sr = (data.services || [])[i];
     if (!sr) return;
+    const status = allowedStatuses.has(sr.status) ? sr.status : 'unknown';
     const mark = document.createElement('span');
-    mark.className = `step-mark ${sr.status}`;
-    mark.textContent = sr.status === 'passed' ? '✓' : '✕';
+    mark.className = `step-mark ${status}`;
+    mark.textContent = status === 'passed' ? '✓' : '✕';
     row.appendChild(mark);
-    if (sr.paymentTxHash && sr.paymentTxHash.startsWith('0x')) {
+    if (sr.settlementEvidence === 'confirmed' && /^0x[0-9a-fA-F]{64}$/.test(sr.settlementTxHash || '')) {
       const tx = document.createElement('div');
       tx.className = 'tx';
-      tx.innerHTML = 'paid: ' + txLink(sr.paymentTxHash);
-      row.querySelector('.step-info').appendChild(tx);
+      tx.append(document.createTextNode('settlement reference: '));
+      const link = document.createElement('a');
+      link.href = `https://www.oklink.com/xlayer/tx/${sr.settlementTxHash}`;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = `${sr.settlementTxHash.slice(0,10)}…${sr.settlementTxHash.slice(-6)}`;
+      tx.append(link);
+      row.querySelector('.step-info')?.appendChild(tx);
     }
   });
 
@@ -848,32 +855,53 @@ async function renderExecution(data, rows) {
 
   const delivBlock = document.getElementById('deliverableBlock');
   delivBlock.style.display = 'block';
-  document.getElementById('deliverable').textContent = data.finalOutput || 'No deliverable was produced.';
-  const passed = data.completedSteps || 0;
-  const failed = (data.totalSteps || 0) - passed;
+  document.getElementById('deliverable').textContent = data.deliverable || 'No deliverable was produced.';
+  const passed = Number.isSafeInteger(data.progress?.completedSteps) && data.progress.completedSteps >= 0 ? data.progress.completedSteps : 0;
+  const total = Number.isSafeInteger(data.progress?.totalSteps) && data.progress.totalSteps >= passed ? data.progress.totalSteps : passed;
+  const failed = total - passed;
   document.getElementById('deliverableNote').textContent =
     `Synthesized from ${passed} verified output${passed===1?'':'s'}.` +
-    (failed > 0 ? ` ${failed} agent${failed===1?'':'s'} failed inspection and ${failed===1?'was':'were'} excluded — only verified work is above.` : ' Every agent passed inspection.');
-  const missionLink = document.createElement('div');
-  missionLink.style.cssText = 'margin-top:8px';
-  missionLink.innerHTML = `<a href="/m/${data.executionId}" target="_blank" rel="noopener">View the public mission page →</a>`;
-  document.getElementById('deliverableNote').appendChild(missionLink);
+    (failed > 0 ? ` ${failed} step${failed===1?'':'s'} failed verification or ${failed===1?'was':'were'} blocked, so only verified work is above.` : ' Every executed step passed verification.');
 
   const receiptBlock = document.getElementById('receiptBlock');
   receiptBlock.style.display = 'block';
-  document.getElementById('receiptGoal').textContent = (data.goal || currentPlan.goal || '').slice(0, 40);
-  document.getElementById('receiptAgents').textContent = `${data.completedSteps}/${data.totalSteps}`;
-  document.getElementById('receiptTotal').textContent = `$${(data.totalPaid||0).toFixed(3)} USDT`;
-  document.getElementById('receiptId').textContent = data.executionId.slice(0, 8);
-  document.getElementById('receiptAnchor').innerHTML = txLink(data.anchorTxHash);
-  if (data.refundedUsdt > 0) {
-    document.getElementById('refundLine').style.display = 'flex';
-    document.getElementById('receiptRefund').innerHTML =
-      `+$${data.refundedUsdt.toFixed(3)} ${data.refundTxHash ? '· ' + txLink(data.refundTxHash) : ''}`;
+  document.getElementById('receiptGoal').textContent = (currentPlan?.goal || 'Private mission').slice(0, 40);
+  document.getElementById('receiptAgents').textContent = `${passed}/${total}`;
+  document.getElementById('receiptTotal').textContent = `$${Number(data.totalAgentFeesUsdt || 0).toFixed(3)} USDT`;
+  document.getElementById('receiptId').textContent = String(data.executionId || '').slice(0, 8);
+  document.getElementById('receiptAnchor').innerHTML = txLink(data.receipt?.anchorTxHash);
+  const refundLine = document.getElementById('refundLine');
+  const refundValue = document.getElementById('receiptRefund');
+  refundLine.style.display = 'none';
+  refundValue.replaceChildren();
+  const refund = data.refund || {};
+  const refundDue = Number(refund.amountDueUsdt || 0);
+  const validRefundTx = typeof refund.txHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(refund.txHash);
+  if (refundDue > 0) {
+    refundLine.style.display = 'flex';
+    if ((refund.state === 'submitted' || refund.state === 'confirmed') && validRefundTx) {
+      const submitted = Number(refund.amountSubmittedUsdt || refundDue);
+      const refundLabel = refund.state === 'confirmed' ? 'refund confirmed' : 'refund submitted';
+      refundValue.append(document.createTextNode(`+$${submitted.toFixed(3)} · ${refundLabel} `));
+      const refundLink = document.createElement('a');
+      refundLink.href = `${EXPLORER}${refund.txHash}`;
+      refundLink.target = '_blank';
+      refundLink.rel = 'noopener';
+      refundLink.textContent = `${refund.txHash.slice(0,10)}…${refund.txHash.slice(-6)}`;
+      refundValue.append(refundLink);
+    } else {
+      const state = refund.state === 'below_threshold'
+        ? 'refund due below threshold'
+        : refund.state === 'failed'
+          ? 'refund owed, submission failed'
+          : 'refund owed, evidence unconfirmed';
+      refundValue.textContent = `$${refundDue.toFixed(3)} · ${state}`;
+    }
   }
 
   document.getElementById('resultOutput').textContent = JSON.stringify(data, null, 2);
-  try { history.replaceState(null, '', `${location.pathname}?exec=${data.executionId}`); } catch (e) {}
+  try { sessionStorage.setItem('bindExecutionId', String(data.executionId || '')); } catch (e) {}
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
 }
 
 // A shareable receipt, struck like a certificate: aged paper, engraved rules, and the Bind
@@ -911,7 +939,7 @@ function drawReceiptCard() {
 
   // the goal, in serif, wrapped
   ctx.fillStyle = INK; ctx.font = '700 40px Georgia, serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  const words = ('“' + (e.goal || '') + '”').split(' ');
+  const words = '“Verified multi-agent mission”'.split(' ');
   let line = '', y = 140;
   for (const w of words) {
     if (ctx.measureText(line + w + ' ').width > W - 300 && line) { ctx.fillText(line.trim(), 70, y); y += 48; line = ''; if (y > 240) break; }
@@ -920,11 +948,13 @@ function drawReceiptCard() {
   if (line.trim() && y <= 240) ctx.fillText(line.trim(), 70, y);
 
   // the facts that matter
-  const paid = (e.totalPaid || 0).toFixed(3);
+  const paid = Number(e.totalAgentFeesUsdt || 0).toFixed(3);
+  const verified = Number(e.progress?.completedSteps || 0);
+  const total = Number(e.progress?.totalSteps || 0);
   const stats = [
-    [String(e.completedSteps ?? 0) + '/' + String(e.totalSteps ?? 0), 'agents verified'],
-    ['$' + paid, 'paid on X Layer'],
-    [String((e.stepResults || []).filter(s => s.status !== 'passed').length), 'dropped, not shipped'],
+    [String(verified) + '/' + String(total), 'agents verified'],
+    ['$' + paid, 'recorded agent fees'],
+    [String(Math.max(total - verified, 0)), 'dropped, not shipped'],
   ];
   let x = 70;
   for (const [big, small] of stats) {
@@ -935,9 +965,9 @@ function drawReceiptCard() {
   }
 
   ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(70, 440); ctx.lineTo(W-70, 440); ctx.stroke();
-  caps('Anchored on X Layer', 70, 472, 15, FADED, 3);
+  caps('Anchor transaction submitted', 70, 472, 15, FADED, 3);
   ctx.fillStyle = INK; ctx.font = '400 19px "JetBrains Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  const a = e.anchorTxHash || '';
+  const a = e.receipt?.anchorTxHash || '';
   ctx.fillText(a ? a.slice(0, 30) + '…' + a.slice(-8) : '—', 70, 502);
   caps('trybind.xyz', 70, 560, 20, WAX, 4);
 
@@ -952,7 +982,7 @@ function drawReceiptCard() {
   ctx.fillText('B', 0, 4);
   ctx.font = '700 11px Georgia, serif';
   try { ctx.letterSpacing = '3px'; } catch (err) {}
-  ctx.fillText('VERIFIED', 0, 44);
+  ctx.fillText('RECORDED', 0, 44);
   try { ctx.letterSpacing = '0px'; } catch (err) {}
   ctx.restore(); ctx.globalAlpha = 1;
   return c;
@@ -973,15 +1003,15 @@ function downloadCard() {
 
 function shareOnX() {
   if (!currentExecution) return;
-  const url = `${location.origin}${location.pathname}?exec=${currentExecution.executionId}`;
-  const n = currentExecution.completedSteps || 0;
-  const text = `I described a goal and Bind hired ${n} on-chain AI agent${n===1?'':'s'}, paid each via x402 on X Layer, verified their work, and handed me one result — with an on-chain receipt.\n\nThe agent economy has a buyer now.`;
+  const url = `${location.origin}/mission`;
+  const n = currentExecution.progress?.completedSteps || 0;
+  const text = `I described a goal and Bind called ${n} AI agent${n===1?'':'s'}, verified the outputs, and handed me one result with receipt commitments and settlement references.\n\nThe agent economy has a buyer now.`;
   window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener');
 }
 function copyLink() {
   if (!currentExecution) return;
-  const url = `${location.origin}${location.pathname}?exec=${currentExecution.executionId}`;
-  navigator.clipboard.writeText(url).then(() => toast('Link copied')).catch(() => toast(url));
+  const url = `${location.origin}/mission`;
+  navigator.clipboard.writeText(url).then(() => toast('Product link copied')).catch(() => toast(url));
 }
 
 function resetAll() {
@@ -989,111 +1019,63 @@ function resetAll() {
   document.getElementById('consoleSection').classList.remove('visible');
   document.getElementById('deliverableBlock').style.display = 'none';
   document.getElementById('receiptBlock').style.display = 'none';
+  try { sessionStorage.removeItem('bindExecutionId'); } catch (e) {}
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function clearAll() { resetAll(); hideError(); document.getElementById('goal').value = ''; }
 
-async function loadFromUrl() {
-  const id = new URLSearchParams(location.search).get('exec');
-  if (!id) return;
+async function loadFromSession() {
+  let id = '';
+  try { id = sessionStorage.getItem('bindExecutionId') || ''; } catch (e) {}
+  if (!/^[0-9a-fA-F-]{36}$/.test(id)) return;
   try {
-    const res = await fetch(`/bind/status/${id}`);
+    const res = await fetch(`/bind/status/${encodeURIComponent(id)}`);
     if (!res.ok) return;
     const data = await res.json();
-    openApp(data.goal || '');   // a shared receipt link lands straight in the dashboard
-    currentPlan = { goal: data.goal, steps: (data.stepResults||[]).map(s=>({step:s.step, agent:{name:s.agentName, feeAmount:0}})), totalPriceUsdt: data.totalPaid };
-    document.getElementById('planGoalText').textContent = `"${(data.goal||'').slice(0,60)}"`;
-    document.getElementById('totalPrice').innerHTML = `$${(data.totalPaid||0).toFixed(3)} <small>USDT</small>`;
-    document.getElementById('planMeta').textContent = `${data.totalSteps} specialists · viewing past receipt`;
+    openApp('');
+    currentPlan = {
+      goal: 'Private mission',
+      steps: (data.services || []).map((service) => ({ step: service.step, agent: { name: service.service, feeAmount: service.feeUsdt || 0 } })),
+      totalPriceUsdt: Number(data.totalAgentFeesUsdt || 0),
+    };
+    document.getElementById('planGoalText').textContent = 'Private mission restored in this tab';
+    document.getElementById('totalPrice').innerHTML = `$${Number(data.totalAgentFeesUsdt || 0).toFixed(3)} <small>USDT</small>`;
+    document.getElementById('planMeta').textContent = `${data.progress?.totalSteps || 0} specialists · private session receipt`;
     const steps = document.getElementById('steps');
     steps.innerHTML = '';
-    (data.stepResults||[]).forEach((sr) => {
-      steps.innerHTML += `<div class="step-row ${sr.status}" data-step="${sr.step}"><span class="step-dot"></span><div class="step-info"><div class="name">${sr.serviceName || sr.agentName}</div><div class="detail">${sr.verificationResult?.detail || sr.error || sr.status}</div>${sr.paymentTxHash && sr.paymentTxHash.startsWith('0x') ? `<div class="tx">paid: ${txLink(sr.paymentTxHash)}</div>` : ''}</div><span class="step-mark ${sr.status}">${sr.status==='passed'?'✓':'✕'}</span></div>`;
+    const rows = (data.services || []).map((service) => {
+      const row = document.createElement('div');
+      row.className = 'step-row';
+      row.dataset.step = String(Number.isInteger(service.step) ? service.step : '');
+      const dot = document.createElement('span');
+      dot.className = 'step-dot';
+      const info = document.createElement('div');
+      info.className = 'step-info';
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = String(service.service || 'Agent');
+      const detail = document.createElement('div');
+      detail.className = 'detail';
+      detail.textContent = service.verificationPassed ? 'Verification passed' : String(service.status || 'unknown');
+      info.append(name, detail);
+      row.append(dot, info);
+      steps.append(row);
+      return row;
     });
-    document.getElementById('execBtn').style.display = 'none';
-    document.getElementById('deliverableBlock').style.display = 'block';
-    document.getElementById('deliverable').textContent = data.finalOutput || '';
-    document.getElementById('receiptBlock').style.display = 'block';
-    document.getElementById('receiptGoal').textContent = (data.goal||'').slice(0,40);
-    document.getElementById('receiptAgents').textContent = `${data.completedSteps}/${data.totalSteps}`;
-    document.getElementById('receiptTotal').textContent = `$${(data.totalPaid||0).toFixed(3)} USDT`;
-    document.getElementById('receiptId').textContent = data.executionId.slice(0,8);
-    document.getElementById('receiptAnchor').innerHTML = txLink(data.anchorTxHash);
-  if (data.refundedUsdt > 0) {
-    document.getElementById('refundLine').style.display = 'flex';
-    document.getElementById('receiptRefund').innerHTML =
-      `+$${data.refundedUsdt.toFixed(3)} ${data.refundTxHash ? '· ' + txLink(data.refundTxHash) : ''}`;
-  }
-    document.getElementById('resultOutput').textContent = JSON.stringify(data, null, 2);
-    currentExecution = data;
     document.getElementById('consoleSection').classList.add('visible');
+    await renderExecution(data, rows);
     document.getElementById('consoleSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {}
 }
-loadFromUrl();
+loadFromSession();
 // The headline numbers are earned, so read them from the live ledger rather than hardcoding.
 fetch('/bind/agents').then(r => r.json()).then(j => {
   const hires = document.getElementById('statHires'), agents = document.getElementById('statAgents');
-  if (hires && j.missions) hires.textContent = j.missions;
-  if (agents && j.leaderboard) agents.textContent = j.leaderboard.filter(a => a.passRate >= 0.34).length;
+  if (hires && Number.isFinite(j.missions)) hires.textContent = j.missions;
+  if (agents && Array.isArray(j.leaderboard)) agents.textContent = j.leaderboard.filter(a => a.passRate >= 0.34).length;
 }).catch(() => {});
 
-// The showcase is a REAL completed mission pulled from the ledger, not an illustration.
-// Every agent, verdict, settlement tx and anchor below is genuine. If it cannot load,
-// the showcase hides itself rather than display anything fabricated.
-const SHOWCASE_ID = '1dca02fd-991c-44c0-88c6-717656cfdeca';
-const SC_EXPLORER = 'https://www.oklink.com/xlayer/tx/';
-function scShort(h) { return h && h.startsWith('0x') ? h.slice(0, 10) + '…' + h.slice(-6) : '—'; }
-function scEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-fetch('/bind/status/' + SHOWCASE_ID).then((r) => r.json()).then((e) => {
-  if (!e || e.error || !Array.isArray(e.stepResults) || !e.stepResults.length) throw new Error('no showcase');
-  const link = document.getElementById('showcaseLink'); if (link) link.href = '/m/' + e.executionId;
-  const crew = document.getElementById('realCrew');
-  crew.innerHTML = e.stepResults.map((s, i) => {
-    const name = s.serviceName || s.agentName || 'Agent';
-    const ok = s.status === 'passed';
-    return `<button type="button" class="mock-agent${i === 0 ? ' active' : ''}" data-i="${i}"><span class="mock-dot"></span><span><b>${scEsc(name)}</b><small>${ok ? 'verified' : scEsc(s.status)}</small></span></button>`;
-  }).join('');
-  const deliv = e.finalOutput || '';
-  document.getElementById('realTitle').textContent = e.goal;
-  document.getElementById('realBody').textContent = deliv.slice(0, 230) + (deliv.length > 230 ? '…' : '');
-  function pick(i) {
-    const s = e.stepResults[i]; if (!s) return;
-    document.querySelectorAll('#realCrew .mock-agent').forEach((b) => b.classList.toggle('active', b.dataset.i === String(i)));
-    const proof = document.querySelector('.mock-proof');
-    if (proof) { proof.classList.remove('mock-swap'); void proof.offsetWidth; proof.classList.add('mock-swap'); }
-    document.getElementById('realSignals').innerHTML =
-      `<span>${e.completedSteps}/${e.totalSteps} verified</span><span>${scEsc((s.verificationResult && s.verificationResult.detail) || s.status)}</span>`;
-    document.getElementById('realReceiptAgent').textContent = s.serviceName || s.agentName || 'Agent';
-    document.getElementById('realReceiptStatus').textContent = s.status === 'passed' ? 'Passed' : s.status;
-    const tx = s.paymentTxHash;
-    document.getElementById('realReceiptTx').innerHTML = (tx && tx.startsWith('0x'))
-      ? `<a href="${SC_EXPLORER}${tx}" target="_blank" rel="noopener">${scShort(tx)}</a>` : 'no payment';
-    document.getElementById('realReceiptAnchor').innerHTML = (e.anchorTxHash && e.anchorTxHash.startsWith('0x'))
-      ? `<a href="${SC_EXPLORER}${e.anchorTxHash}" target="_blank" rel="noopener">${scShort(e.anchorTxHash)}</a>` : '—';
-  }
-  pick(0);
-  document.querySelectorAll('#realCrew .mock-agent').forEach((b) => b.addEventListener('click', () => pick(Number(b.dataset.i))));
-}).catch(() => { const ws = document.querySelector('.wide-showcase'); if (ws) ws.style.display = 'none'; });
-function initReveals() {
-  const targets = document.querySelectorAll('.white-band, .black-band, .wide-showcase, .quote-grid, .deploy-panel, .steps-grid, .dev-grid, .uc-grid, footer.foot');
-  targets.forEach((el) => el.classList.add('reveal'));
-  if (!('IntersectionObserver' in window)) {
-    targets.forEach((el) => el.classList.add('visible'));
-    return;
-  }
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-        observer.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
-  targets.forEach((el) => observer.observe(el));
-}
-initReveals();
 loadCfg();
 // Reflect an already-authorized wallet without prompting.
 if (window.ethereum) {

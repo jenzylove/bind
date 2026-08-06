@@ -101,11 +101,17 @@ async function submitTransferWithAuthorization(auth: Eip3009Auth, signature: str
 
   const attempts: string[] = [];
   if (sig.length === 130) {
-    // v,r,s overload first — cheapest calldata, most widely implemented.
+    // v,r,s overload — cheapest calldata, most widely implemented.
     const r = sig.slice(0, 64), s = sig.slice(64, 128);
     let v = BigInt("0x" + sig.slice(128, 130));
     if (v < 27n) v += 27n; // some signers return 0/1; the token's ecrecover expects 27/28
+    // Try BOTH parities. A `v` that is off by one is the classic cause of
+    // "TetherToken: invalid signature" — the recovered address is simply wrong, the token
+    // reverts, and the other parity recovers the real signer. The wrong one just reverts
+    // (no funds move), so trying both is safe and costs only a simulation.
+    const vAlt = v === 27n ? 28n : 27n;
     attempts.push(SEL_VRS + common + numWord(v) + r + s);
+    attempts.push(SEL_VRS + common + numWord(vAlt) + r + s);
   }
   // bytes-signature overload. The `bytes signature` is the 7th argument, so its data
   // begins right after the 7-word head (6 fixed args + the offset pointer) = 0xE0.

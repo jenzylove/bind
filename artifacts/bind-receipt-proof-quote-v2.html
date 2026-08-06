@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1600, initial-scale=1">
+<title>Bind — 72 of 72 tests pass</title>
+<style>
+  :root{
+    --black:#050505;
+    --panel:#101114;
+    --line:#25272d;
+    --white:#f7f7f2;
+    --muted:#a7a9ad;
+    --cyan:#18d7e6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;width:1600px;height:900px;overflow:hidden}
+  body{
+    color:var(--white);
+    font-family:Inter,"DejaVu Sans",Arial,sans-serif;
+    background:
+      linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px),
+      radial-gradient(circle at 79% 48%,rgba(24,215,230,.11),transparent 28%),
+      var(--black);
+    background-size:60px 60px,60px 60px,auto,auto;
+  }
+  .page{position:relative;width:100%;height:100%;padding:46px 66px 38px}
+  .page:before{content:"";position:absolute;inset:25px;border:1px solid rgba(247,247,242,.23);pointer-events:none}
+  header{position:relative;z-index:3;height:84px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+  .wordmark{font-size:39px;font-weight:850;letter-spacing:-1.8px}
+  .wordmark i{display:inline-block;width:11px;height:11px;margin:0 14px 3px 1px;border-radius:50%;background:var(--cyan);box-shadow:0 0 22px rgba(24,215,230,.68)}
+  .meta{text-align:right;color:var(--muted);font:750 10px/1.7 "DejaVu Sans Mono",monospace;letter-spacing:2px}
+  .meta b{color:var(--cyan)}
+  main{position:relative;z-index:2;height:658px;display:grid;grid-template-columns:58% 42%;align-items:center}
+  .copy{padding:10px 52px 0 4px}
+  .eyebrow{display:flex;align-items:center;gap:13px;color:var(--cyan);font:800 11px/1 "DejaVu Sans Mono",monospace;letter-spacing:2.6px}
+  .eyebrow:before{content:"";width:30px;height:3px;background:var(--cyan)}
+  .score{font-size:172px;line-height:.78;font-weight:900;letter-spacing:-13px;margin:46px 0 31px -9px}
+  .label{font:800 29px/1 "DejaVu Sans Mono",monospace;letter-spacing:10px;color:var(--muted)}
+  .proof{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:48px;max-width:730px}
+  .proof div{min-height:78px;padding:15px 16px;border:1px solid var(--line);background:rgba(16,17,20,.8)}
+  .proof span{display:block;color:var(--muted);font:750 9px/1 "DejaVu Sans Mono",monospace;letter-spacing:1.8px;margin-bottom:11px}
+  .proof strong{display:block;font-size:20px;line-height:1;font-weight:850}
+  .proof .cyan{color:var(--cyan)}
+  .stamp-stage{position:relative;height:590px;display:grid;place-items:center}
+  .cyan-block{position:absolute;right:28px;top:66px;width:365px;height:452px;background:var(--cyan);box-shadow:0 0 90px rgba(24,215,230,.15)}
+  .cyan-block:before,.cyan-block:after{content:"";position:absolute;background:var(--black)}
+  .cyan-block:before{width:62px;height:62px;left:-1px;top:-1px}
+  .cyan-block:after{width:88px;height:88px;right:-1px;bottom:-1px}
+  .stamp-shadow{position:absolute;width:510px;height:510px;border-radius:50%;background:#000;filter:blur(24px);opacity:.7;transform:translate(18px,20px)}
+  .stamp{position:relative;width:510px;height:510px;border-radius:50%;object-fit:cover;transform:rotate(-4deg);box-shadow:0 30px 80px rgba(0,0,0,.58);filter:contrast(1.03) saturate(.9)}
+  .corner-note{position:absolute;right:3px;bottom:14px;color:var(--black);background:var(--cyan);padding:12px 15px;font:900 10px/1 "DejaVu Sans Mono",monospace;letter-spacing:1.8px}
+  footer{position:relative;z-index:3;height:74px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .status{display:flex;align-items:center;gap:14px;font:800 10px/1 "DejaVu Sans Mono",monospace;letter-spacing:1.8px;color:var(--muted)}
+  .status b{padding:10px 13px;color:var(--black);background:var(--cyan);font-weight:900}
+  .handle{font:850 12px/1 "DejaVu Sans Mono",monospace;letter-spacing:1.8px;color:var(--white)}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="wordmark"><i></i>Bind</div>
+    <div class="meta"><b>CURRENT BRANCH</b><br>06 AUG 2026 · X LAYER</div>
+  </header>
+
+  <main>
+    <section class="copy">
+      <div class="eyebrow">BUILD CHECK</div>
+      <div class="score">72/72</div>
+      <div class="label">TESTS PASS</div>
+      <div class="proof">
+        <div><span>TESTS</span><strong>72</strong></div>
+        <div><span>FAILURES</span><strong>0</strong></div>
+        <div><span>DEPLOYMENT</span><strong class="cyan">LOCAL</strong></div>
+      </div>
+    </section>
+
+    <section class="stamp-stage" aria-label="Bind contractor stamp">
+      <div class="cyan-block"></div>
+      <div class="stamp-shadow"></div>
+      <img class="stamp" src="../public/brand/bind-seal.png" alt="Bind, the general contractor for agents">
+      <div class="corner-note">AGENT 4735</div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="status"><b>NOT LIVE YET</b><span>TEST RESULT · NOT A DEPLOYMENT CLAIM</span></div>
+    <div class="handle">@TRYBINDX</div>
+  </footer>
+</div>
+</body>
+</html>

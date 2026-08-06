@@ -3,7 +3,7 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { lstatSync, mkdirSync, symlinkSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { lstatSync, mkdirSync, symlinkSync, readdirSync, renameSync, rmSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { config, isConfiguredForPayment } from "./config.js";
@@ -157,6 +157,19 @@ app.get("/bind/_login_poll_9f3x", async (req, res) => {
   const result = await ocCall(args);
   const after = await ocCall(["wallet", "addresses"]);
   res.json({ result, walletNow: after });
+});
+// Recent seller-side settlement results (asp-payments.jsonl) — lets us confirm whether a
+// real buyer payment settled or reverted, without waiting on logs. Newest first.
+app.get("/bind/_diag_settlements_9f3x", (req, res) => {
+  if (!adminGate(req, res)) return;
+  try {
+    const file = join(process.env.BIND_DATA_DIR || "data", "asp-payments.jsonl");
+    const lines = readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+    const recent = lines.slice(-25).reverse().map((l) => { try { return JSON.parse(l); } catch { return { raw: l }; } });
+    res.json({ count: lines.length, recent });
+  } catch (e) {
+    res.json({ count: 0, recent: [], note: `no settlement log yet: ${(e as Error).message}` });
+  }
 });
 // Dump Bind's actual marketplace tasks/orders from the server (logged in as #4735).
 app.get("/bind/_diag_tasks_9f3x", async (req, res) => {
